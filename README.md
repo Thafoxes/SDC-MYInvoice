@@ -1,195 +1,256 @@
-# Project Name
+# NudgeWise — Invoice Follow-Up Assistant
 
-> A one-sentence description of what your project does and who it is for.
+> A seller-controlled invoice follow-up prototype for Malaysian micro and small businesses. NudgeWise tracks outstanding invoices, prepares reminder drafts, records simulated follow-ups, and explains which customer records need attention.
 
----
+**Current version:** Vue demo v1.1 (Phase 1 reminder safeguards + Phase 2 customer follow-up priorities)  
+**Status:** Local prototype using **synthetic data only**. No external messaging, model inference, real payments, or production backend is connected yet.
 
 ## Team Information
 
-| Field                  | Details                                     |
-| ---------------------- | ------------------------------------------- |
-| **Team Name**          | YOLO                                        |
-| **Team Domain**        | Domain 2                                    |
-| **SDG Track (1–17)**   | e.g. SDG 11 — Sustainable Cities and Communities |
-| **Team Leader**        | WONG JIA SOON                               |
-| **University**         | University Name(s)                          |
-| **Number of Members**  | e.g. 4                                      |
+| Field | Details |
+| --- | --- |
+| Team name | YOLO |
+| Hackathon domain | Domain 2 — Orbyte Smart SME Challenge |
+| SDG focus | SDG 8 — Decent Work and Economic Growth (targets 8.2 and 8.3) |
+| Team leader | WONG JIA SOON |
+| University | To be confirmed by the team |
+| Team members | To be confirmed by the team |
 
-## Links
+## Project Links
 
-| Resource          | Link                                           |
-| ----------------- | ---------------------------------------------- |
-| GitHub Repository | https://github.com/your-username/your-project  |
-| Replit Project    | https://replit.com/@your-username/your-project |
-| Live Demo         | https://your-project.replit.app                |
-| RunPod Endpoint   | https://api.runpod.ai/v2/your-endpoint-id      |
-| Slide Deck        | https://example.com/slides                     |
-| Demo Video        | https://example.com/demo-video                 |
+| Resource | Link / Status |
+| --- | --- |
+| Source repository | [Thafoxes/SDC-MYInvoice](https://github.com/Thafoxes/SDC-MYInvoice) |
+| Replit project | Not connected yet |
+| Live demo | Not deployed yet |
+| RunPod inference | Not configured yet |
+| Slides and demo video | To be added before submission |
 
----
+## Problem and Solution
 
-## Overview
+Malaysian small-business sellers may need to compare invoice records, payment updates, and customer messages manually when following up on unpaid invoices. Repeated checks can lead to wasted time or inappropriate reminders if an invoice is already settled, disputed, or awaiting verification.
 
-### Problem
+**NudgeWise** focuses on a controlled follow-up workflow: **invoice checkpoint → draft → seller review/approval → revalidation → recorded outcome**. The current build simulates the workflow using local data; actual delivery through Telegram is future work.
 
-Describe the real-world problem you are solving in 2–4 sentences. Who is affected, and why does it matter?
+## Implemented Demo Features
 
-### Solution
+- **Dashboard:** collected/outstanding/overdue metrics, invoice search and filters, charts, and invoice details.
+- **Action Center:** simulated reminder approvals, rejections, customer-response exceptions, and activity history.
+- **AI Assistant page:** **simulated**, invoice-aware responses; it is **not** connected to a language model yet.
+- **Reminder safeguards (Phase 1):** due/overdue checkpoints; holds for disputes and unverified payment claims; approval checks; duplicate-checkpoint protection; missed-payment-promise alerts in the demo logic.
+- **Customer priorities (Phase 2):** explainable **Red / Yellow / Green / Grey** classification from synthetic invoice/payment history. Customer priority is separate from the urgency of an operational review.
+- **Demo controls:** simulated business date, invoice checks, payment recording, customer replies, and reset.
+- **Storage:** the current prototype saves demo state in the **browser's localStorage**, not a server database. It uses the key `nudgewise-demo-v1.1`.
 
-Explain how your project uses AI to solve the problem and what makes it valuable.
+### Not Implemented Yet
 
-### Key Features
+- Real Telegram bot messages, webhooks, customer opt-in, and seller authentication.
+- Gemma 4 via Ollama or RunPod; model-output validation and hosted inference.
+- SQL database and server-side business/role access controls.
+- Live Orbyte platform integration, real payment verification, and production-grade delivery handling.
 
-- **Feature 1** — Short description.
-- **Feature 2** — Short description.
-- **Feature 3** — Short description.
+**Do not use this prototype with real customer details, credentials, or financial records.** The demo is not a payment-processing service or statutory e-invoice submission system.
 
-### Tech Stack
+## Tech Stack (Current)
 
-| Layer         | Technology                   |
-| ------------- | ---------------------------- |
-| Frontend      | e.g. HTML, React             |
-| Backend       | e.g. Python, Flask / FastAPI |
-| Database      | e.g. PostgreSQL, SQLite      |
-| AI / Compute  | RunPod (GPU)                 |
-| Hosting / Dev | Replit                       |
+| Layer | Technology |
+| --- | --- |
+| Frontend | Vue 3 + TypeScript |
+| Build / development | Vite 5 |
+| Navigation | Vue Router |
+| Styling | Tailwind CSS |
+| Charts | Chart.js + vue-chartjs |
+| Icons | lucide-vue-next (current demo dependency) |
+| Application logic | TypeScript modules in `src/lib/` |
+| Demo persistence | Browser localStorage |
+| Logic tests | TypeScript compiler + Node.js built-in test runner |
 
----
+**Planned architecture (not yet deployed):** Vue frontend → Replit-hosted backend + persistent SQL database → Telegram API for messaging and Ollama (local / RunPod) for AI tasks. The backend will enforce authentication, permissions, approvals, and idempotent sending.
+
+## Quick Start — Run Locally
+
+### Prerequisites
+
+- **Node.js 20 or newer** (the project has been started successfully with Node.js 20.20.2 and npm 10.8.2).
+- **npm** (installed with Node.js).
+- Git (if cloning the repository).
+
+Check your installations:
+
+```bash
+node -v
+npm -v
+git --version
+```
+
+### Option A — Clone from GitHub (new teammate)
+
+```bash
+git clone https://github.com/Thafoxes/SDC-MYInvoice.git
+cd SDC-MYInvoice
+npm install
+npm run dev
+```
+
+Open the **Local** URL displayed by Vite, usually **http://localhost:5173/**.
+
+> The GitHub repository must contain the project files and latest commit before teammates can clone this application. The application is currently developed in `~/nudgewise` / `~/SDC-MYInvoice` on the original development machine.
+
+### Option B — Run an existing local checkout (Ubuntu)
+
+```bash
+cd ~/SDC-MYInvoice
+npm install
+npm run dev
+```
+
+To stop the dev server, press **Ctrl+C**. To restart later, run `npm run dev` from the project folder.
+
+### Windows (PowerShell)
+
+```powershell
+git clone https://github.com/Thafoxes/SDC-MYInvoice.git
+cd SDC-MYInvoice
+npm install
+npm run dev
+```
+
+### Available npm Commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start Vite's development server |
+| `npm run typecheck` | Check Vue and TypeScript types |
+| `npm run build` | Type-check, then build the app into `dist/` |
+| `npm run preview` | Serve the compiled build for local preview |
+| `npm run test:logic` | Run the framework-independent business-logic regression tests |
+
+Recommended checks after setup:
+
+```bash
+npm run test:logic
+npm run build
+```
+
+The logic tests use a temporary **`.test-build/`** directory and cover the local business rules; they do **not** validate Telegram delivery, browser rendering, or external API integrations.
+
+### Common Setup Problems
+
+- **`npm: command not found`**: install a supported Node.js release that includes npm.
+- **Port 5173 already in use**: Vite may choose another port. Open the address shown in the terminal.
+- **`npm install` reports vulnerabilities**: inspect them using `npm audit`; avoid automatically using `npm audit fix --force`, which can introduce breaking upgrades.
+- **`npm install` warns about `lucide-vue-next` deprecation**: it is an existing dependency; migration can be handled separately.
+- **Demo changes disappear after browser-data clearing**: the app stores demo state in localStorage; use Demo Controls → Reset to restore the shipped scenarios.
 
 ## Project Structure
 
-```
-.
-├── docs/                    # Screenshots, diagrams
-├── runpod/
-│   └── handler.py           # RunPod serverless handler (GPU workload)
+```text
+SDC-MYInvoice/
+├── index.html
+├── package.json
+├── package-lock.json
+├── vite.config.ts
+├── tailwind.config.js
+├── tsconfig.json
+├── tsconfig.logic-tests.json
 ├── src/
-│   ├── main.py              # Application entry point
-│   └── utils.py             # Helper functions
-├── submission/              # Required submission documents
-│   ├── REPLIT PROOF OF USE.pdf
-│   ├── RUNPOD PROOF OF USE.pdf
-│   └── Submission Template SDC Hackathon.pdf
+│   ├── main.ts
+│   ├── App.vue
+│   ├── index.css
+│   ├── router/index.ts
+│   ├── views/
+│   │   ├── DashboardView.vue
+│   │   ├── ActionCenterView.vue
+│   │   └── AiAssistantView.vue
+│   ├── components/
+│   │   ├── AppSidebar.vue
+│   │   ├── AppHeader.vue
+│   │   ├── InvoiceDetailDrawer.vue
+│   │   ├── DemoControls.vue
+│   │   ├── StatusBadge.vue
+│   │   └── BaseModal.vue
+│   ├── composables/useDemoStore.ts
+│   └── lib/
+│       ├── data.ts               # synthetic seed data
+│       ├── store.ts              # local demo state
+│       ├── actions.ts            # invoice/reminder actions
+│       ├── reminderEngine.ts     # checkpoint and hold rules
+│       ├── priorityEngine.ts     # customer follow-up priorities
+│       ├── aiService.ts          # simulated assistant
+│       └── format.ts
 ├── tests/
-│   └── test_utils.py        # Unit tests
-├── .env.example             # Example environment variables
-├── .gitignore
-├── .replit                  # Replit run configuration
+│   ├── logic.test.cjs
+│   └── setup-test-build.cjs
+├── PHASE_1_2_CHANGELOG.md
+├── tech_stack.md
 ├── LICENSE
-├── requirements.txt         # Python dependencies
 └── README.md
 ```
 
-### Architecture
+The project may also include other repository metadata such as `.codex/` and `.gitignore`. Do not commit `node_modules/`, `dist/`, `.test-build/`, or `.env` files.
 
+## Running on Replit — Planned
+
+Replit is a target development/deployment environment, **not yet verified as a running deployment for this version**.
+
+1. Import the GitHub repository into a Replit project.
+2. Ensure Replit provides a compatible Node.js/npm environment.
+3. Run `npm install`, then `npm run dev` (or configure the project's run command accordingly).
+4. Open the web preview on the port Vite exposes. The Vite dev server is configured to bind to `0.0.0.0`.
+5. Test the app in Replit before claiming deployment or adding submission proof.
+
+**No Replit/Telegram/RunPod API keys are needed to run the current local demo.** Any future API credentials must be stored securely in Replit Secrets or server-side environment variables, never in browser code or Git.
+
+## RunPod and Ollama — Planned
+
+The future AI integration will use **Gemma 4** through Ollama for reminder drafting, customer-response classification, and summarizing verified evidence. The expected arrangement is:
+
+```text
+Vue seller dashboard
+        ↓
+Application backend (planned on Replit)
+        ├── SQL database and invoice rules
+        ├── Telegram approval / messaging (planned)
+        └── Authenticated Ollama endpoint (local for local testing,
+            RunPod GPU Pod for hosted inference)
 ```
-User ──► Replit (App / API) ──► RunPod Endpoint (GPU model)
-                │
-                └──► Response returned to user
-```
 
----
+RunPod is **not connected in this version**. A deployed Replit backend cannot access an Ollama service running on a developer's laptop via `localhost`. The hosted endpoint will need a secure network connection and appropriate authentication.
 
-## How to Run
+## Development and Contribution
 
-### Option 1 — Run on Replit (Recommended)
-
-1. Open the [Replit Project](https://replit.com/@your-username/your-project), or import this repository via **Create Repl → Import from GitHub**.
-2. Open the **Secrets** tab (🔒) and add the variables listed in `.env.example`:
-   - `RUNPOD_API_KEY`
-   - `RUNPOD_ENDPOINT_ID`
-3. Click **Run**. Replit uses the `.replit` file to start `python src/main.py`.
-
-### Option 2 — Run Locally
+For a shared repository, pull your team's latest changes before starting work. Prefer a feature branch and pull request rather than having everyone push directly to `main`:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-username/your-project.git
-cd your-project
-
-# 2. Create and activate a virtual environment
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Configure environment variables
-cp .env.example .env            # then fill in your values
-
-# 5. Run the app
-python src/main.py
+cd ~/SDC-MYInvoice
+git pull --ff-only origin main
+git switch -c feature/your-change
+# edit and test your code
+npm run test:logic
+npm run build
+git add .
+git commit -m "Describe your change"
+git push -u origin feature/your-change
 ```
 
-### Run Tests
+Before staging or pushing, check that no `.env`, credentials, personal data, or build artifacts are included.
 
-```bash
-python -m unittest discover tests
-```
+## Hackathon Progress and Submission
 
----
+- [x] Vue demo dashboard, invoice views, and local activity history.
+- [x] Local demo clock, reset, and simulated payments.
+- [x] Phase 1 reminder/approval safeguards implemented in demo logic.
+- [x] Phase 2 rule-based customer priority classification implemented.
+- [ ] Full browser regression and complete v1.1 acceptance testing.
+- [ ] Persistent SQL backend and server-side permissions.
+- [ ] Telegram seller approvals and opted-in customer messaging.
+- [ ] Gemma 4 / Ollama integration, local and hosted inference tests, and fallback verification.
+- [ ] Simulated Orbyte connector interface and second-business isolation demonstration.
+- [ ] Replit and RunPod proof of use, if required by the submission rules.
+- [ ] Slides, demo video, and final submission documents.
+- [ ] Verify documentation and GitHub repository are up to date.
 
-## How We Use Replit *(Required)*
-
-Describe how your team used Replit. For example:
-
-- **Development:** Collaborative coding in a shared Repl using Multiplayer.
-- **Hosting:** The app is deployed with Replit Deployments at the Live Demo link above.
-- **Secrets:** API keys are stored in Replit Secrets, never in the code.
-
-📄 Proof of use: [`submission/REPLIT PROOF OF USE.pdf`](submission/REPLIT%20PROOF%20OF%20USE.pdf)
-
-## How We Use RunPod *(Required)*
-
-Describe how your team used RunPod. For example:
-
-- **Workload:** Model inference (e.g. text generation, image processing) runs on a RunPod GPU.
-- **Setup:** `runpod/handler.py` is deployed as a **RunPod Serverless Endpoint**.
-- **Integration:** The Replit app sends requests to the endpoint using `RUNPOD_API_KEY` and `RUNPOD_ENDPOINT_ID`.
-
-Example request:
-
-```bash
-curl -X POST https://api.runpod.ai/v2/$RUNPOD_ENDPOINT_ID/runsync \
-  -H "Authorization: Bearer $RUNPOD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"input": {"prompt": "Hello"}}'
-```
-
-📄 Proof of use: [`submission/RUNPOD PROOF OF USE.pdf`](submission/RUNPOD%20PROOF%20OF%20USE.pdf)
-
----
-
-## Challenges & Learnings
-
-- What challenges did you face, and how did you overcome them?
-- What did your team learn?
-
-## Future Improvements
-
-- [ ] Improvement 1
-- [ ] Improvement 2
-
-## Team
-
-| Name        | Role                | GitHub                                   |
-| ----------- | ------------------- | ---------------------------------------- |
-| Member Name | Team Lead / Backend | [@username](https://github.com/username) |
-| Member Name | Frontend            | [@username](https://github.com/username) |
-| Member Name | AI / RunPod         | [@username](https://github.com/username) |
-
----
-
-## Submission Checklist
-
-- [ ] Team name, domain (Domain 1 / Domain 2) and SDG track filled in
-- [ ] Slide deck link added
-- [ ] Demo video link added
-- [ ] Replit used, with proof of use in `submission/`
-- [ ] RunPod used, with proof of use in `submission/`
-- [ ] Submission template completed in `submission/`
-- [ ] "How to Run" steps verified
-- [ ] No API keys or secrets committed to the repository
+See [`PHASE_1_2_CHANGELOG.md`](PHASE_1_2_CHANGELOG.md) for the implementation notes. For the full requirements and acceptance criteria, refer to the team's NudgeWise v1.1 requirements document.
 
 ## License
 

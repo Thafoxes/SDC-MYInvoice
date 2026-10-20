@@ -12,3 +12,22 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.test-build/
+coverage/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# System files
+.DS_Store
