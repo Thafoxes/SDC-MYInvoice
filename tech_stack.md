@@ -1,5 +1,3 @@
-
-
 Initial planning:
 - track overdue invoices
 - send reminders to customers about pending payments (3 days before due date)
@@ -16,4 +14,4 @@ Initial planning:
 Requirements:
 - must be compatible with Replit environment
 - telegram API integration for communication
-- runpod and ollama for localhost testing compability for hosting the agent
+- runpod and ollama for localhost testing compatibility for hosting the agent
