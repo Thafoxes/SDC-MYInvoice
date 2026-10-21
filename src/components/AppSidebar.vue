@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { RouterLink } from 'vue-router';
-import { LayoutDashboard, Zap, Sparkles, Settings, UserCircle, Menu, X } from 'lucide-vue-next';
+import { LayoutDashboard, Zap, Sparkles, Menu, X } from 'lucide-vue-next';
 const mobileOpen = ref(false);
 const links = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -24,9 +24,6 @@ const links = [
         <component :is="link.icon" class="w-[18px] h-[18px]" :class="$route.path===link.to?'text-white':'text-orbyte-blue'" />{{link.label}}
       </RouterLink>
     </nav>
-    <div class="border-t border-orbyte-border px-3 py-4 space-y-1">
-      <div class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-orbyte-muted" title="Settings integration is not part of the current demo"><Settings class="w-[18px] h-[18px]" />Settings <span class="ml-auto text-[9px]">Soon</span></div>
-      <div class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-orbyte-muted" title="Identity is simulated in this demo"><UserCircle class="w-[18px] h-[18px]" />Seller Profile</div>
-    </div>
+
   </aside>
 </template>

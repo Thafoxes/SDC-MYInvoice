@@ -22,6 +22,6 @@ function onKeydown(e:KeyboardEvent){if(e.key==='Enter'&&!e.shiftKey){e.preventDe
    <div v-if="loading" class="flex gap-3"><div class="rounded-full bg-orbyte-button p-2 text-white"><Bot class="w-4 h-4"/></div><p class="rounded-xl bg-orbyte-bg p-3 text-sm text-orbyte-muted">Preparing demo answer…</p></div>
  </div>
  <div class="flex items-center gap-2 border-t border-orbyte-border bg-amber-50/70 px-5 py-2"><AlertCircle class="w-4 h-4 text-amber-600 shrink-0"/><p class="text-xs text-amber-700">AI API is not connected. Responses use local, predefined invoice-aware rules.</p></div>
- <div class="border-t border-orbyte-border p-4"><div class="flex items-end gap-2"><textarea v-model="input" @keydown="onKeydown" rows="1" placeholder="Ask about your invoices..." class="form-input !mt-0 resize-none flex-1"/><button class="primary-btn" :disabled="!input.trim()||loading" @click="send(input)"><Send class="w-4 h-4"/>Send</button><button v-if="messages.length" class="outline-btn" @click="clear"><Trash2 class="w-4 h-4"/>Clear</button></div></div>
+ <div class="border-t border-orbyte-border p-4"><div class="flex items-end gap-2"><textarea aria-label="Ask about invoices" v-model="input" @keydown="onKeydown" rows="1" placeholder="Ask about your invoices..." class="form-input !mt-0 resize-none flex-1"/><button class="primary-btn" :disabled="!input.trim()||loading" @click="send(input)"><Send class="w-4 h-4"/>Send</button><button v-if="messages.length" class="outline-btn" @click="clear"><Trash2 class="w-4 h-4"/>Clear</button></div></div>
  </div></div>
 </template>
