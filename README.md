@@ -12,7 +12,7 @@
 | **Team Domain**        | Domain 2                                    |
 | **SDG Track (1–17)**   | e.g. SDG 11 — Sustainable Cities and Communities |
 | **Team Leader**        | WONG JIA SOON                               |
-| **University**         | UNIVERSITI TEKNOLOGI MALAYSI                |
+| **University**         | UNIVERSITI TEKNOLOGI MALAYSIA                |
 | **Number of Members**  | 4                                      |
 
 ## Links
