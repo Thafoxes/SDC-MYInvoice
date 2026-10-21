@@ -2,10 +2,12 @@
 import { computed, ref } from 'vue';
 import { AlertTriangle, Eye, Check, Pencil, X, Send, ShieldCheck, PauseCircle } from 'lucide-vue-next';
 import { useDemoStore } from '@/composables/useDemoStore';
-import { DEMO_BUSINESS_ID, DEMO_SELLER_ID, computeInvoiceWithCustomer, updateCustomerResponse } from '@/lib/store';
-import { approveFollowUp, rejectFollowUp, editFollowUpMessage, sendApprovedFollowUp, resolveVerificationHold, resolveDispute, confirmPromise } from '@/lib/actions';
+import { DEMO_BUSINESS_ID, DEMO_SELLER_ID, computeInvoiceWithCustomer } from '@/lib/store';
+import { approveFollowUp, rejectFollowUp, editFollowUpMessage, sendApprovedFollowUp, resolveVerificationHold, resolveDispute, confirmPromise } from '@/services/commands';
 import { formatMYR, formatDate, formatDateTime, daysOverdue } from '@/lib/format';
 import type { FollowUpAction, InvoiceWithCustomer } from '@/types';
+import { updateCustomerResponse, telegramEnabled } from '@/services/commands';
+import TelegramReceipts from '@/components/TelegramReceipts.vue';
 import BaseModal from '@/components/BaseModal.vue';
 import InvoiceDetailDrawer from '@/components/InvoiceDetailDrawer.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
@@ -29,21 +31,22 @@ const selected=computed(()=>invoices.value.find(i=>i.id===selectedId.value)??nul
 function openInvoice(i:InvoiceWithCustomer){selectedId.value=i.id;drawerOpen.value=true;}
 let toastTimer:ReturnType<typeof setTimeout>|undefined;
 function notice(msg:string){toast.value=msg;if(toastTimer)clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.value='',3900);}
-function execute(fn:()=>{success:boolean;error?:string},ok:string){const r=fn();notice(r.success?ok:r.error||'Action failed');refreshStore();}
+async function execute(fn:()=>Promise<{success:boolean;error?:string}>,ok:string){const r=await fn();notice(r.success?ok:r.error||'Action failed');refreshStore();}
 function beginEdit(f:FollowUpAction){editId.value=f.id;editText.value=f.message;editError.value='';}
-function saveEdit(){if(!editId.value)return;if(!editText.value.trim()){editError.value='Message is required';return;}const result=editFollowUpMessage(editId.value,editText.value,seller.value.name,seller.value.role);if(result.success){editId.value=null;notice('Reminder saved; approval reset.');}else editError.value=result.error||'Could not edit';refreshStore();}
-function reviewResponse(id:string){updateCustomerResponse(id,{review_status:'reviewed'});notice('Response marked reviewed');refreshStore();}
+async function saveEdit(){if(!editId.value)return;if(!editText.value.trim()){editError.value='Message is required';return;}const result=await editFollowUpMessage(editId.value,editText.value,seller.value.name,seller.value.role);if(result.success){editId.value=null;notice('Reminder saved; approval reset.');}else editError.value=result.error||'Could not edit';refreshStore();}
+async function reviewResponse(id:string){await updateCustomerResponse(id,{review_status:'reviewed'});notice('Response marked reviewed');refreshStore();}
 </script>
 <template>
 <div class="space-y-5">
+ <TelegramReceipts />
  <div v-if="toast" role="status" class="fixed right-5 top-20 z-50 rounded-xl bg-orbyte-ink p-3 text-sm text-white shadow-xl">{{toast}}</div>
  <div class="card flex flex-wrap gap-1.5 p-1.5"><button v-for="t in tabs" :key="t.id" @click="tab=t.id" :aria-pressed="tab===t.id" class="rounded-lg px-3.5 py-2 text-sm font-medium transition" :class="tab===t.id?'bg-orbyte-button text-white shadow-sm':'text-orbyte-muted hover:bg-orbyte-bg'">{{t.label}} <span v-if="t.count" class="ml-1 rounded-full px-1.5 text-[10px]" :class="tab===t.id?'bg-white/20':'bg-orbyte-bg'">{{t.count}}</span></button></div>
  <section v-if="tab==='all'||tab==='approval'" class="space-y-3"><h3 class="text-sm font-semibold">Reminder Approvals</h3><p v-if="!followUps.length" class="card p-6 text-sm text-orbyte-muted">No reminders yet. Use Demo Controls → Run Invoice Check to create drafts.</p>
    <div v-for="f in followUps" :key="f.id" class="card p-5"><div class="flex flex-col gap-4 lg:flex-row lg:justify-between"><div class="space-y-2 flex-1"><div class="flex flex-wrap items-center gap-2"><h4 class="font-semibold">{{f.customer?.name||'—'}}</h4><span class="text-sm text-orbyte-muted">{{f.invoice?.invoice_number}}</span><StatusBadge v-if="f.invoice" :status="f.invoice.status"/></div>
      <div class="flex flex-wrap gap-4 text-xs text-orbyte-muted"><span>Outstanding: <b class="text-orbyte-ink">{{formatMYR(f.invoice?.outstanding_balance||0)}}</b></span><span>Due: {{formatDate(f.invoice?.due_date||'')}}</span><span>Checkpoint: {{f.checkpoint}}</span><span v-if="f.invoice?.days_overdue" class="text-red-600">{{f.invoice.days_overdue}} days overdue</span></div>
-     <p class="text-xs text-orbyte-muted">{{f.reason}}</p><p class="rounded-lg bg-orbyte-bg p-3 text-sm">{{f.message}}</p><div class="flex gap-2 items-center text-xs"><span class="rounded-md bg-amber-50 px-2 py-1 capitalize text-amber-700">{{f.approval_state}}</span><span class="rounded-md bg-slate-50 px-2 py-1 capitalize text-slate-600">{{f.send_state}}</span><span v-if="f.delivery_status" class="text-orbyte-muted">{{f.delivery_status}} (simulation)</span></div></div>
+     <p class="text-xs text-orbyte-muted">{{f.reason}}</p><p class="rounded-lg bg-orbyte-bg p-3 text-sm">{{f.message}}</p><div class="flex gap-2 items-center text-xs"><span class="rounded-md bg-amber-50 px-2 py-1 capitalize text-amber-700">{{f.approval_state}}</span><span class="rounded-md bg-slate-50 px-2 py-1 capitalize text-slate-600">{{f.send_state}}</span><span v-if="f.delivery_status" class="text-orbyte-muted">{{f.delivery_status}}</span></div></div>
      <div class="flex flex-wrap gap-2 lg:flex-col lg:min-w-[155px]"><template v-if="f.approval_state==='pending'"><button class="success-btn" @click="execute(()=>approveFollowUp(f.id,seller.id,seller.name,seller.role),'Reminder approved')"><Check class="w-4 h-4"/>Approve</button><button class="outline-btn" @click="beginEdit(f)"><Pencil class="w-4 h-4"/>Edit</button><button class="danger-btn" @click="execute(()=>rejectFollowUp(f.id,seller.name,seller.role),'Reminder rejected')"><X class="w-4 h-4"/>Reject</button></template>
-       <button v-if="f.approval_state==='approved'&&f.send_state==='not_sent'" class="primary-btn" @click="execute(()=>sendApprovedFollowUp(f.id,seller.name),'Message sent (simulated only)')"><Send class="w-4 h-4"/>Send (Simulation)</button>
+       <button v-if="f.approval_state==='approved'&&f.send_state==='not_sent'" class="primary-btn" @click="execute(()=>sendApprovedFollowUp(f.id,seller.name),telegramEnabled?'Invoice message delivered to Telegram':'Message sent (simulated only)')"><Send class="w-4 h-4"/>{{telegramEnabled?'Send to Telegram':'Send (Simulation)'}}</button>
        <button v-if="f.invoice" class="outline-btn" @click="openInvoice(f.invoice)"><Eye class="w-4 h-4"/>View Invoice</button></div></div></div>
  </section>
  <section v-if="tab==='all'||tab==='responses'" class="space-y-3"><h3 class="text-sm font-semibold">Customer Responses</h3><p v-if="!responses.length" class="card p-6 text-sm text-orbyte-muted">No customer responses yet.</p>
@@ -52,7 +55,7 @@ function reviewResponse(id:string){updateCustomerResponse(id,{review_status:'rev
    <template v-if="r.ai_category==='payment_already_made_claim' && r.invoice"><button class="success-btn" @click="execute(()=>resolveVerificationHold(r.invoice!.id,true,seller.name),'Verification hold reviewed — payment remains unpaid until recorded')"><ShieldCheck class="w-4 h-4"/>Review Verification</button><button class="outline-btn" @click="execute(()=>resolveVerificationHold(r.invoice!.id,false,seller.name),'Hold released for seller follow-up')">Cannot Verify</button></template>
    <button v-if="r.ai_category==='invoice_dispute'&&r.invoice" class="outline-btn" @click="execute(()=>resolveDispute(r.invoice!.id,seller.name),'Dispute resolved')">Resolve Dispute</button>
    <template v-if="r.ai_category==='payment_promise' && r.ai_extracted_date && r.invoice"><button class="success-btn" @click="execute(()=>confirmPromise(r.invoice!.id,r.ai_extracted_date!,true,seller.name),'Promise confirmed')">Confirm Promise</button><button class="outline-btn" @click="execute(()=>confirmPromise(r.invoice!.id,r.ai_extracted_date!,false,seller.name),'Promise not confirmed')">Decline</button></template>
-   <button v-if="r.review_status==='pending'" class="outline-btn" @click="reviewResponse(r.id)"><Check class="w-4 h-4"/>Mark Reviewed</button><button v-if="r.review_status==='pending'" class="outline-btn" @click="updateCustomerResponse(r.id,{review_status:'resolved'});refreshStore();notice('Response held')"><PauseCircle class="w-4 h-4"/>Keep On Hold</button></div></div></div>
+   <button v-if="r.review_status==='pending'" class="outline-btn" @click="reviewResponse(r.id)"><Check class="w-4 h-4"/>Mark Reviewed</button><button v-if="r.review_status==='pending'" class="outline-btn" @click="reviewResponse(r.id)"><PauseCircle class="w-4 h-4"/>Keep On Hold</button></div></div></div>
  </section>
  <section v-if="tab==='all'||tab==='exceptions'" class="space-y-3"><h3 class="text-sm font-semibold">Exceptions</h3><p v-if="!exceptions.length" class="card p-6 text-sm text-orbyte-muted">No exceptions requiring attention.</p><div v-for="(e,k) in exceptions" :key="k" class="card flex gap-3 p-4"><span class="rounded-lg bg-red-50 p-2 h-fit"><AlertTriangle class="w-4 h-4 text-red-500"/></span><div class="flex-1"><h4 class="font-semibold text-sm">{{e.title}} <span class="text-orbyte-muted font-normal">· {{e.invoice.invoice_number}}</span></h4><p class="text-sm text-orbyte-muted mt-1">{{e.reason}}</p><p class="text-xs mt-1">Recommended: {{e.action}}</p><button class="outline-btn mt-3" @click="openInvoice(e.invoice)">View Invoice</button></div></div></section>
  <section v-if="tab==='history'" class="card p-5"><h3 class="font-semibold mb-4">Activity History</h3><p v-if="!activity.length" class="empty-text">No activity yet.</p><div v-for="(e,k) in activity" :key="e.id" class="border-l-2 pl-4 py-2" :class="k===0?'border-orbyte-blue':'border-orbyte-border'"><p class="text-sm">{{e.description}}</p><p class="text-xs text-orbyte-muted mt-1">{{formatDateTime(e.created_at)}} · {{e.actor}} ({{e.actor_role}})</p></div></section>

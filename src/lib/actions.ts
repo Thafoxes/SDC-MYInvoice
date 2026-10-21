@@ -181,7 +181,7 @@ export function rejectFollowUp(followUpId: string, rejectorName: string, rejecto
   addActivity(businessId, fu.invoice_id, 'reminder_rejected', rejectorName, 'seller', `Reminder ${fu.id} rejected; checkpoint stays recorded`);
   return { success: true };
 }
-export function sendApprovedFollowUp(followUpId: string, senderName: string, businessId: string = DEMO_BUSINESS_ID): ActionResult & { simulated?: boolean } {
+export function prepareFollowUpDelivery(followUpId: string, senderName: string, businessId: string = DEMO_BUSINESS_ID): ActionResult {
   if (!sellerInBusiness(senderName, businessId)) return { success: false, error: 'Seller authorization required' };
   const fu = actionForBusiness(followUpId, businessId);
   if (!fu) return { success: false, error: 'Follow-up not found for this business' };
@@ -195,7 +195,15 @@ export function sendApprovedFollowUp(followUpId: string, senderName: string, bus
     cancelAction(fu, 'Message, recipient or invoice records changed after approval');
     return { success: false, error: 'Approved snapshot changed; reminder cancelled. New seller approval required.' };
   }
-  // No API: mark this as SIMULATED ONLY. Server-side atomic/idempotent send required later.
+  return { success: true };
+}
+
+export function sendApprovedFollowUp(followUpId: string, senderName: string, businessId: string = DEMO_BUSINESS_ID): ActionResult & { simulated?: boolean } {
+  const result = prepareFollowUpDelivery(followUpId, senderName, businessId);
+  if (!result.success) return result;
+  const fu = actionForBusiness(followUpId, businessId)!;
+  const inv = invoiceForBusiness(fu.invoice_id, businessId)!;
+  // Browser-only mode records simulation; the local server uses prepareFollowUpDelivery.
   updateFollowUp(followUpId, {
     send_state: 'sent', approval_state: 'sent', sent_at: new Date().toISOString(),
     delivery_status: 'simulated_not_delivered',

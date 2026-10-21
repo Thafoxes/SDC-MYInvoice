@@ -1,14 +1,25 @@
-// Local data store using localStorage — no external services
+// Demo store: browser localStorage or an injected server persistence adapter.
 import {
   Business, User, Customer, Invoice, Payment, Credit, FollowUpAction,
   CustomerResponse, ActivityEvent, Notification, AiConversation, DemoState,
   InvoiceWithCustomer,
 } from '@/types';
 import { subtractMoney, sumMoney, daysOverdue, daysBetween } from './format';
+import type { Receipt } from './receipts';
 
 const STORAGE_KEY = 'nudgewise-demo-v1.1'; // new seed with v1.1 historical invoice test cases
+let storage: Pick<Storage, 'getItem' | 'setItem'> | undefined;
+
+export function configureStorage(adapter: Pick<Storage, 'getItem' | 'setItem'>): void {
+  storage = adapter;
+  cache = null;
+}
+
+// Server snapshots replace the browser cache; they are never written back as mutations.
+export function replaceSnapshot(data: StoreData): void { cache = data; }
 
 export interface StoreData {
+  receipts?: Receipt[];
   businesses: Business[];
   users: User[];
   customers: Customer[];
@@ -200,6 +211,12 @@ let cache: StoreData | null = null;
 
 function load(): StoreData {
   if (cache) return cache;
+  if (storage) {
+    const raw = storage.getItem(STORAGE_KEY);
+    cache = raw ? JSON.parse(raw) as StoreData : getSeedData();
+    if (!raw) save(cache!);
+    return cache!;
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -213,13 +230,14 @@ function load(): StoreData {
 }
 
 function save(data: StoreData): void {
+  if (storage) storage.setItem(STORAGE_KEY, JSON.stringify(data));
   cache = data;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch { /* ignore quota errors */ }
 }
 
-function update(mutator: (data: StoreData) => void): StoreData {
+export function update(mutator: (data: StoreData) => void): StoreData {
   const data = load();
   // Deep clone to trigger Vue store revisions on refresh
   const cloned: StoreData = JSON.parse(JSON.stringify(data));

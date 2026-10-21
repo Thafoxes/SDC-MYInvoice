@@ -72,6 +72,7 @@ export function approvalFingerprint(fu: FollowUpAction, invoice: Invoice, data: 
     promise: invoice.promise_confirmed ? invoice.promise_to_pay_date : null,
     payments, credits, message: fu.message, messageVersion: fu.message_version,
     recipient: fu.recipient, actualRecipient: customer?.phone ?? null,
+    telegramRecipient: customer?.telegram_chat_id ?? null,
   }));
 }
 

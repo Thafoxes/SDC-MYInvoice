@@ -5,8 +5,9 @@ import type { InvoiceWithCustomer } from '@/types';
 import BaseModal from '@/components/BaseModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { useDemoStore } from '@/composables/useDemoStore';
-import { computeInvoiceWithCustomer, DEMO_BUSINESS_ID, addActivity } from '@/lib/store';
-import { recordPayment, resolveVerificationHold, resolveDispute, confirmPromise } from '@/lib/actions';
+import { computeInvoiceWithCustomer, DEMO_BUSINESS_ID } from '@/lib/store';
+import { recordPayment, resolveVerificationHold, resolveDispute, confirmPromise } from '@/services/commands';
+import { addActivity } from '@/services/commands';
 import { formatMYR, formatDate, formatDateTime } from '@/lib/format';
 const props = defineProps<{invoice:InvoiceWithCustomer|null; open:boolean; sellerName:string; sellerRole:string}>();
 const emit=defineEmits<{close:[]}>();
@@ -18,10 +19,10 @@ const responses=computed(()=>data.value.customerResponses.filter(r=>r.invoice_id
 const activity=computed(()=>data.value.activityEvents.filter(e=>e.invoice_id===current.value?.id));
 const payModal=ref(false), amount=ref(''),date=ref(data.value.demoState.simulated_date),method=ref('bank_transfer'),reference=ref(''),error=ref('');
 watch(()=>props.open,(open)=>{if(open){date.value=data.value.demoState.simulated_date;error.value='';}});
-function reviewVerification(verified:boolean){if(!current.value)return;resolveVerificationHold(current.value.id,verified,props.sellerName);addActivity(DEMO_BUSINESS_ID,current.value.id,'verification_reviewed',props.sellerName,props.sellerRole,verified?'Seller confirmed verification review (does not itself record a payment)':'Seller could not verify payment');refreshStore();emit('close');}
-function resolveDisputeAction(){if(!current.value)return;resolveDispute(current.value.id,props.sellerName);refreshStore();emit('close');}
-function confirmPromiseAction(confirmed:boolean){if(!current.value?.promise_to_pay_date)return;confirmPromise(current.value.id,current.value.promise_to_pay_date,confirmed,props.sellerName);refreshStore();emit('close');}
-function savePayment(){if(!current.value)return;const n=Number(amount.value);if(!Number.isFinite(n)||n<=0){error.value='Enter a valid positive payment amount.';return;}if(!date.value){error.value='Select a payment date.';return;}const result=recordPayment(current.value.id,n,date.value,method.value,reference.value,props.sellerName);if(!result.success){error.value=result.error||'Could not save payment';return;}amount.value='';reference.value='';error.value='';payModal.value=false;refreshStore();}
+async function reviewVerification(verified:boolean){if(!current.value)return;await resolveVerificationHold(current.value.id,verified,props.sellerName);await addActivity(DEMO_BUSINESS_ID,current.value.id,'verification_reviewed',props.sellerName,props.sellerRole,verified?'Seller confirmed verification review (does not itself record a payment)':'Seller could not verify payment');refreshStore();emit('close');}
+async function resolveDisputeAction(){if(!current.value)return;await resolveDispute(current.value.id,props.sellerName);refreshStore();emit('close');}
+async function confirmPromiseAction(confirmed:boolean){if(!current.value?.promise_to_pay_date)return;await confirmPromise(current.value.id,current.value.promise_to_pay_date,confirmed,props.sellerName);refreshStore();emit('close');}
+async function savePayment(){if(!current.value)return;const n=Number(amount.value);if(!Number.isFinite(n)||n<=0){error.value='Enter a valid positive payment amount.';return;}if(!date.value){error.value='Select a payment date.';return;}const result=await recordPayment(current.value.id,n,date.value,method.value,reference.value,props.sellerName);if(!result.success){error.value=result.error||'Could not save payment';return;}amount.value='';reference.value='';error.value='';payModal.value=false;refreshStore();}
 </script>
 <template>
   <Teleport to="body"><div v-if="open && current" class="fixed inset-0 z-[55] bg-[#162A50]/35" @click.self="emit('close')">

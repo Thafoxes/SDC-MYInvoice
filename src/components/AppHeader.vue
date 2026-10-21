@@ -4,14 +4,14 @@ import { Bell, ChevronDown } from 'lucide-vue-next';
 import { useRouter, useRoute } from 'vue-router';
 import type { Notification } from '@/types';
 import { formatDateTime } from '@/lib/format';
-import { markNotificationReadById } from '@/lib/store';
+import { markNotificationReadById } from '@/services/commands';
 import { useDemoStore } from '@/composables/useDemoStore';
 const props=defineProps<{notifications:Notification[]; simulatedDate:string; sellerName:string; sellerRole:string; avatarColor:string}>();
 const {refreshStore}=useDemoStore(); const route=useRoute(); const router=useRouter();
 const showNotifs=ref(false), showProfile=ref(false);
 const unreadCount=computed(()=>props.notifications.filter(n=>!n.read).length);
 const formattedDate=computed(()=>new Date(props.simulatedDate+'T12:00:00').toLocaleDateString('en-MY',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Kuala_Lumpur'}));
-function openNotification(n:Notification){ markNotificationReadById(n.id); refreshStore();showNotifs.value=false;if(n.link==='action-center')router.push('/action-center'); }
+async function openNotification(n:Notification){ await markNotificationReadById(n.id); refreshStore();showNotifs.value=false;if(n.link==='action-center')router.push('/action-center'); }
 </script>
 <template>
   <header class="sticky top-0 z-30 border-b border-orbyte-border bg-white/85 backdrop-blur-md">
