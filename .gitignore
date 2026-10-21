@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
+.venv-telegram/
 
 # Environment
 .env
@@ -19,6 +20,8 @@ node_modules/
 # Build outputs
 dist/
 .test-build/
+.server-build/
+.local-data/
 coverage/
 
 # Environment variables
