@@ -25,6 +25,14 @@ export default {
         card: '0 1px 2px 0 rgba(15, 23, 42, 0.04)',
         popover: '0 4px 16px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -2px rgba(15, 23, 42, 0.04)',
       },
+      fontSize: {
+        xs: ['0.875rem', '1.3rem'],      // 14px  (was 12px) - body text
+        sm: ['0.9375rem', '1.4rem'],     // 15px  - emphasised body
+        base: ['1rem', '1.5rem'],        // 16px  - section titles
+        lg: ['1.125rem', '1.6rem'],      // 18px
+        xl: ['1.25rem', '1.75rem'],      // 20px  - page title
+        '2xl': ['1.75rem', '2.1rem'],    // 28px  - KPI numbers
+      },
       borderRadius: {
         DEFAULT: '8px',
         card: '8px',

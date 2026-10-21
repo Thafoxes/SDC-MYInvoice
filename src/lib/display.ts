@@ -1,4 +1,5 @@
-import type { Invoice, InvoiceWithCustomer, FollowUpAction, CustomerResponse } from '@/types';
+import type { Invoice, InvoiceWithCustomer, FollowUpAction, CustomerResponse, Customer } from '@/types';
+import { formatDate } from './format';
 import type { CustomerPriority } from './priorityEngine';
 
 export interface DerivedLabel {
@@ -150,23 +151,106 @@ export function formatReviewStatus(status: CustomerResponse['review_status'] | s
   }
 }
 
+/** Replace ISO dates (YYYY-MM-DD) inside free text with a readable date. */
+export function formatTextDates(text: string | null | undefined): string {
+  if (!text) return '';
+  return text.replace(/\b(\d{4}-\d{2}-\d{2})\b/g, (m) => formatDate(m));
+}
+
+/** "1 approval", "2 approvals" */
+export function plural(n: number, word: string, pluralWord = word + 's'): string {
+  return `${n} ${n === 1 ? word : pluralWord}`;
+}
+
 /**
- * Replaces any follow-up id (pattern fu-[a-z0-9]+) with the related invoice number,
- * e.g. "Reminder for INV-1006".
+ * Makes stored activity/notification text readable:
+ * - follow-up ids (fu-xxxx) → "Reminder for INV-1006"
+ * - "Checkpoint N" → readable stage name
+ * - ISO dates → formatted dates
  */
 export function formatActivityText(
   description: string | null,
   data?: { followUpActions: FollowUpAction[]; invoices: Invoice[] }
 ): string {
   if (!description) return '';
-  if (!data) return description;
-  return description.replace(/(?:Reminder\s+)?(fu-[a-z0-9]+)/gi, (match, fuId) => {
-    const fu = data.followUpActions.find(f => f.id === fuId);
-    if (!fu) return match;
-    const inv = data.invoices.find(i => i.id === fu.invoice_id);
-    if (!inv) return match;
-    return `Reminder for ${inv.invoice_number}`;
-  });
+  let text = description;
+  if (data) {
+    text = text.replace(/(?:Reminder\s+)?(fu-[a-z0-9]+)/gi, (match, fuId) => {
+      const fu = data.followUpActions.find(f => f.id === fuId);
+      if (!fu) return 'Reminder';
+      const inv = data.invoices.find(i => i.id === fu.invoice_id);
+      return inv ? `Reminder for ${inv.invoice_number}` : 'Reminder';
+    });
+  }
+  text = text.replace(/checkpoint\s+(\d+)(\s+reminder)?/gi, (_m, n) => formatCheckpoint(Number(n)));
+  text = formatTextDates(text);
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export type TimelineKind =
+  | 'created' | 'draft' | 'approved' | 'edited' | 'rejected' | 'cancelled' | 'sent'
+  | 'reply' | 'hold' | 'payment' | 'settled' | 'resolved' | 'promise' | 'alert' | 'status';
+
+/** Groups stored activity event types into a small set of timeline icon kinds. */
+export function timelineKind(eventType: string): TimelineKind {
+  switch (eventType) {
+    case 'invoice_created': return 'created';
+    case 'reminder_generated': return 'draft';
+    case 'reminder_approved': return 'approved';
+    case 'reminder_edited': return 'edited';
+    case 'reminder_rejected': return 'rejected';
+    case 'reminder_cancelled': return 'cancelled';
+    case 'reminder_simulated':
+    case 'reminder_sent': return 'sent';
+    case 'customer_replied': return 'reply';
+    case 'dispute_raised': return 'hold';
+    case 'payment_recorded': return 'payment';
+    case 'settlement_recorded': return 'settled';
+    case 'verification_resolved':
+    case 'verification_reviewed':
+    case 'dispute_resolved': return 'resolved';
+    case 'promise_updated': return 'promise';
+    case 'missed_promise':
+    case 'escalation': return 'alert';
+    default: return 'status';
+  }
+}
+
+export function formatActor(actor: string | null, role: string | null): string {
+  if (!actor || actor === 'system') return 'System';
+  if (!role || role === 'system') return actor;
+  return `${actor} · ${role.charAt(0).toUpperCase() + role.slice(1)}`;
+}
+
+export interface SafetyCheck {
+  label: string;
+  ok: boolean;
+}
+
+/**
+ * Display-only checklist mirroring the pre-send revalidation in actions.ts.
+ * It does not authorise anything; the rule functions still decide.
+ */
+export function reminderSafetyChecks(
+  fu: FollowUpAction,
+  inv: InvoiceWithCustomer | undefined,
+  data: { followUpActions: FollowUpAction[]; customers: Customer[] },
+  today: string,
+): SafetyCheck[] {
+  if (!inv) return [{ label: 'Invoice record found', ok: false }];
+  const customer = data.customers.find(c => c.id === inv.customer_id && c.business_id === inv.business_id);
+  const promiseActive = !!(inv.promise_confirmed && inv.promise_to_pay_date && inv.promise_to_pay_date >= today);
+  const alreadySent = data.followUpActions.some(o =>
+    o.id !== fu.id && o.business_id === fu.business_id && o.invoice_id === fu.invoice_id &&
+    o.checkpoint === fu.checkpoint && o.send_state === 'sent');
+  return [
+    { label: 'Balance still outstanding', ok: inv.outstanding_balance > 0 },
+    { label: 'No active dispute', ok: !inv.dispute_active },
+    { label: 'No payment-verification hold', ok: !inv.verification_hold },
+    { label: 'No active payment promise', ok: !promiseActive },
+    { label: 'Recipient matches customer record', ok: !!fu.recipient && !!customer && fu.recipient === customer.phone },
+    { label: 'Not already sent for this stage', ok: !alreadySent },
+  ];
 }
 
 /**

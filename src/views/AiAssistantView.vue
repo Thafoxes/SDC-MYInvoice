@@ -81,7 +81,7 @@ function onKeydown(e: KeyboardEvent) {
           <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700 mb-3">
             <Bot class="w-5 h-5" />
           </div>
-          <h2 class="text-sm font-semibold text-slate-900">AI invoice assistant</h2>
+          <h2 class="text-base font-semibold text-slate-900">AI invoice assistant</h2>
           <p class="text-xs text-slate-500 mt-1 max-w-sm">
             Ask questions about receivables, overdue balances, and customer accounts for {{ currentBusiness?.name }}.
           </p>
@@ -118,7 +118,7 @@ function onKeydown(e: KeyboardEvent) {
             >
               {{ m.content }}
             </div>
-            <span class="text-[10px] text-slate-400 tabular-nums px-1">{{ formatDateTime(m.created_at) }}</span>
+            <span class="text-[12px] text-slate-400 tabular-nums px-1">{{ formatDateTime(m.created_at) }}</span>
           </div>
         </div>
 
@@ -133,7 +133,7 @@ function onKeydown(e: KeyboardEvent) {
       <!-- Footer disclaimer & input -->
       <div class="flex items-center gap-1.5 border-t border-slate-100 bg-slate-50/60 px-4 py-2">
         <AlertCircle class="w-3.5 h-3.5 text-slate-400 shrink-0" />
-        <p class="text-[11px] text-slate-500">
+        <p class="text-[13px] text-slate-500">
           Simulated local responses generated from active business invoice records.
         </p>
       </div>

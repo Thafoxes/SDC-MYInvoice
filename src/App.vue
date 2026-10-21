@@ -3,6 +3,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { RouterView } from 'vue-router';
 import AppSidebar from '@/components/AppSidebar.vue';
 import AppHeader from '@/components/AppHeader.vue';
+import AppToast from '@/components/AppToast.vue';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { useCurrentUser } from '@/composables/useCurrentUser';
 
@@ -26,7 +27,8 @@ onUnmounted(() => window.removeEventListener('storage', onStorage));
         :simulated-date="data.demoState.simulated_date"
         @open-menu="mobileOpen = true"
       />
-      <main class="px-4 py-5 lg:px-8 max-w-7xl mx-auto"><RouterView /></main>
+      <main class="px-4 py-6 lg:px-8 lg:py-8 max-w-[1400px] mx-auto"><RouterView /></main>
     </div>
+    <AppToast />
   </div>
 </template>

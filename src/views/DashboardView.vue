@@ -1,646 +1,371 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
-import { Search, Eye, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, AlertCircle } from 'lucide-vue-next';
-import { Doughnut, Line } from 'vue-chartjs';
-import { Chart as ChartJS, ArcElement, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler } from 'chart.js';
-import StatusBadge from '@/components/StatusBadge.vue';
+import { ref, computed } from 'vue';
+import { RouterLink } from 'vue-router';
+import { ArrowRight, ChevronRight } from 'lucide-vue-next';
+import { Bar } from 'vue-chartjs';
+import { Chart as ChartJS, BarElement, CategoryScale, LinearScale, Tooltip } from 'chart.js';
 import InvoiceDetailDrawer from '@/components/InvoiceDetailDrawer.vue';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { useCurrentUser } from '@/composables/useCurrentUser';
 import { computeInvoiceWithCustomer } from '@/lib/store';
 import { calculateCustomerPriorities } from '@/lib/priorityEngine';
-import type { CustomerPriority, PriorityLevel } from '@/lib/priorityEngine';
+import type { PriorityLevel } from '@/lib/priorityEngine';
 import { formatMYR, formatDate, sumMoney, daysOverdue } from '@/lib/format';
-import { getDerivedLabelChips, formatShortPriorityReason } from '@/lib/display';
+import { formatShortPriorityReason, plural } from '@/lib/display';
 import type { InvoiceWithCustomer } from '@/types';
 
-ChartJS.register(ArcElement, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler);
+ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip);
 
 const { data } = useDemoStore();
 const { currentUser, currentBusiness } = useCurrentUser();
-
 const today = computed(() => data.value.demoState.simulated_date);
+const bizId = computed(() => currentUser.value.business_id);
 
-const invoices = computed(() =>
+/* ---------- Source data (current business only; settled HIST-* history excluded) ---------- */
+const allInvoices = computed(() =>
   data.value.invoices
-    .filter(i => i.business_id === currentUser.value.business_id)
-    .map(i => computeInvoiceWithCustomer(i, data.value, today.value))
+    .filter(i => i.business_id === bizId.value)
+    .map(i => computeInvoiceWithCustomer(i, data.value, today.value)),
 );
-
-// Date period filter: default = This Month ('month')
-const dateFilterOptions = [
-  { id: 'month', label: 'This Month' },
-  { id: 'week', label: 'This Week' },
-  { id: 'today', label: 'Today' },
-  { id: 'custom', label: 'Custom' },
-] as const;
-const dateFilter = ref<'today' | 'week' | 'month' | 'custom'>('month');
-const customStart = ref('2026-10-01');
-const customEnd = ref('2026-10-20');
-
-function periodBounds() {
-  const d = new Date(today.value + 'T12:00:00');
-  if (dateFilter.value === 'today') return { start: today.value, end: today.value };
-  if (dateFilter.value === 'custom') return { start: customStart.value, end: customEnd.value };
-  if (dateFilter.value === 'month') return { start: today.value.slice(0, 8) + '01', end: today.value };
-  const day = d.getDay();
-  d.setDate(d.getDate() - day);
-  return {
-    start: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-    end: today.value,
-  };
-}
-
-const collected = computed(() => {
-  const p = periodBounds();
-  return sumMoney(
-    data.value.payments
-      .filter(x => x.business_id === currentUser.value.business_id && x.payment_date >= p.start && x.payment_date <= p.end && x.verification_status === 'recorded')
-      .map(x => x.amount)
-  );
-});
-
-const totalOutstanding = computed(() => sumMoney(invoices.value.map(i => i.outstanding_balance)));
+const invoices = computed(() => allInvoices.value.filter(i => !i.invoice_number.startsWith('HIST-')));
+const openInvoices = computed(() => invoices.value.filter(i => i.outstanding_balance > 0));
 const overdueInvoices = computed(() => invoices.value.filter(i => i.status === 'overdue'));
-const overdueAmount = computed(() => sumMoney(overdueInvoices.value.map(i => i.outstanding_balance)));
 
-const pendingApprovals = computed(() =>
-  data.value.followUpActions.filter(f => f.business_id === currentUser.value.business_id && f.approval_state === 'pending')
+/* ---------- Period (affects "Collected") ---------- */
+const periods = [
+  { id: 'month', label: 'This month' },
+  { id: 'week', label: 'This week' },
+  { id: 'today', label: 'Today' },
+] as const;
+type PeriodId = (typeof periods)[number]['id'];
+const period = ref<PeriodId>('month');
+
+function periodStart(): string {
+  if (period.value === 'today') return today.value;
+  if (period.value === 'month') return today.value.slice(0, 8) + '01';
+  const d = new Date(today.value + 'T12:00:00');
+  d.setDate(d.getDate() - d.getDay());
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const recordedPayments = computed(() =>
+  data.value.payments.filter(p => p.business_id === bizId.value && p.verification_status === 'recorded'),
+);
+const collected = computed(() =>
+  sumMoney(recordedPayments.value.filter(p => p.payment_date >= periodStart() && p.payment_date <= today.value).map(p => p.amount)),
 );
 
-// Exceptions calculation
+/* ---------- Work queue ---------- */
+const pendingApprovals = computed(() =>
+  data.value.followUpActions.filter(f => f.business_id === bizId.value && f.approval_state === 'pending' && f.send_state === 'not_sent'),
+);
 const exceptions = computed(() => {
-  const result: { invoice: InvoiceWithCustomer; title: string; reason: string }[] = [];
+  const out: { invoice: InvoiceWithCustomer; reason: string }[] = [];
   for (const i of invoices.value) {
-    if (i.dispute_active) {
-      result.push({ invoice: i, title: 'Dispute active', reason: 'Customer disputed invoice' });
-    }
-    if (i.verification_hold) {
-      result.push({ invoice: i, title: 'Verification pending', reason: 'Customer claims payment made' });
-    }
-    if (i.promise_confirmed && i.promise_to_pay_date && daysOverdue(i.promise_to_pay_date, today.value) > 0 && i.outstanding_balance > 0) {
-      result.push({ invoice: i, title: 'Missed promise', reason: `Promise date ${formatDate(i.promise_to_pay_date)} missed` });
+    if (i.dispute_active) out.push({ invoice: i, reason: 'Customer disputed invoice' });
+    if (i.verification_hold) out.push({ invoice: i, reason: 'Claims already paid — verify' });
+    if (i.promise_confirmed && i.promise_to_pay_date && i.outstanding_balance > 0 && daysOverdue(i.promise_to_pay_date, today.value) > 0) {
+      out.push({ invoice: i, reason: `Missed promise (${formatDate(i.promise_to_pay_date)})` });
     }
   }
-  const escalations = data.value.followUpActions.filter(
-    f => f.business_id === currentUser.value.business_id && f.checkpoint === 5 && f.delivery_status === 'seller_decision_required'
-  );
-  for (const esc of escalations) {
+  for (const esc of data.value.followUpActions.filter(f => f.business_id === bizId.value && f.checkpoint === 5 && f.delivery_status === 'seller_decision_required')) {
     const inv = invoices.value.find(i => i.id === esc.invoice_id);
-    if (inv && inv.outstanding_balance > 0 && inv.status !== 'paid') {
-      result.push({ invoice: inv, title: 'Escalation needed', reason: '21+ days overdue' });
-    }
+    if (inv && inv.outstanding_balance > 0) out.push({ invoice: inv, reason: '21+ days overdue — your decision needed' });
   }
-  return result;
+  return out;
 });
 
-// 4 KPI Cards (no icon tiles; label, number, sub-line)
+/* ---------- Customer health ---------- */
+const priorities = computed(() => calculateCustomerPriorities(bizId.value, today.value, data.value));
+const levelMeta: { id: PriorityLevel; label: string; color: string }[] = [
+  { id: 'red', label: 'Needs attention', color: 'bg-rose-500' },
+  { id: 'yellow', label: 'Follow-up due', color: 'bg-amber-400' },
+  { id: 'green', label: 'Routine', color: 'bg-emerald-500' },
+  { id: 'grey', label: 'New / limited history', color: 'bg-slate-300' },
+];
+const levelCounts = computed(() =>
+  levelMeta.map(l => ({ ...l, count: priorities.value.filter(p => p.level === l.id).length })),
+);
+const topAttention = computed(() => priorities.value.filter(p => p.level === 'red').slice(0, 3));
+
+/* ---------- KPIs ---------- */
+const needsActionCount = computed(() => pendingApprovals.value.length + exceptions.value.length);
+const outstandingTotal = computed(() => sumMoney(openInvoices.value.map(i => i.outstanding_balance)));
+const overdueTotal = computed(() => sumMoney(overdueInvoices.value.map(i => i.outstanding_balance)));
+const overduePct = computed(() => (outstandingTotal.value > 0 ? Math.round((overdueTotal.value / outstandingTotal.value) * 100) : 0));
 const kpis = computed(() => [
   {
     label: 'Outstanding',
-    value: formatMYR(totalOutstanding.value),
-    sub: `${invoices.value.filter(i => i.status !== 'paid').length} open invoices`,
+    value: formatMYR(outstandingTotal.value),
+    sub: plural(openInvoices.value.length, 'open invoice'),
+    to: '/invoices',
+    tone: 'text-slate-900',
   },
   {
     label: 'Overdue',
-    value: formatMYR(overdueAmount.value),
-    sub: `${overdueInvoices.value.length} overdue invoices`,
-    highlight: overdueInvoices.value.length > 0,
+    value: formatMYR(overdueTotal.value),
+    sub: `${plural(overdueInvoices.value.length, 'invoice')} · ${overduePct.value}% of outstanding`,
+    to: '/invoices?status=overdue',
+    tone: overdueInvoices.value.length ? 'text-rose-600' : 'text-slate-900',
   },
   {
     label: 'Collected',
     value: formatMYR(collected.value),
-    sub: dateFilter.value === 'month' ? 'This month' : dateFilter.value === 'week' ? 'This week' : dateFilter.value === 'today' ? 'Today' : 'Custom period',
+    sub: periods.find(p => p.id === period.value)!.label,
+    to: '/invoices?status=paid',
+    tone: 'text-slate-900',
   },
   {
-    label: 'Needs action',
-    value: String(pendingApprovals.value.length + exceptions.value.length),
-    sub: `${pendingApprovals.value.length} approvals · ${exceptions.value.length} exceptions`,
-    highlight: (pendingApprovals.value.length + exceptions.value.length) > 0,
+    label: 'Needs your action',
+    value: String(needsActionCount.value),
+    sub: `${plural(pendingApprovals.value.length, 'approval')} · ${plural(exceptions.value.length, 'exception')}`,
+    to: '/action-center',
+    tone: needsActionCount.value ? 'text-blue-700' : 'text-slate-900',
   },
 ]);
 
-// Priorities
-const priorityRecords = computed(() =>
-  calculateCustomerPriorities(currentUser.value.business_id, today.value, data.value)
-);
-const priorityList = computed(() => [...priorityRecords.value].sort((a, b) => {
-  const rank: Record<PriorityLevel, number> = { red: 0, yellow: 1, grey: 2, green: 3 };
-  return rank[a.level] - rank[b.level] || a.customerName.localeCompare(b.customerName);
-}));
-
-const showAllPriorities = ref(false);
-const visiblePriorities = computed(() =>
-  showAllPriorities.value
-    ? priorityList.value
-    : priorityList.value.filter(p => p.level === 'red' || p.level === 'yellow')
-);
-
-const priorityMap = computed(() => new Map(priorityRecords.value.map(p => [p.customerId, p])));
-const expandedPriority = ref<string | null>(null);
-
-function priorityBadgeClass(level: PriorityLevel) {
-  return {
-    red: 'bg-rose-50 text-rose-700',
-    yellow: 'bg-amber-50 text-amber-700',
-    green: 'bg-emerald-50 text-emerald-700',
-    grey: 'bg-slate-100 text-slate-600',
-  }[level];
-}
-
-function priorityInvoiceRefs(priority: CustomerPriority) {
-  return priority.supportingInvoiceIds
-    .map(id => invoices.value.find(i => i.id === id)?.invoice_number ?? id)
-    .join(', ') || 'None';
-}
-
-// "Needs action" list (max 6 rows: approvals, exceptions, Red customers)
-interface NeedsActionItem {
-  id: string;
-  customer: string;
-  invoiceNumber: string;
-  issue: string;
-  tag: string;
-  tagClass: string;
-  invoice: InvoiceWithCustomer | null;
-}
-
-const needsActionItems = computed<NeedsActionItem[]>(() => {
-  const items: NeedsActionItem[] = [];
-
-  // 1. Pending approvals
+/* ---------- Today's priorities: one row per customer + invoice ---------- */
+interface QueueItem { key: string; kind: 'Approval' | 'Exception' | 'Overdue'; customer: string; invoice: InvoiceWithCustomer | null; text: string }
+const queue = computed<QueueItem[]>(() => {
+  const items: QueueItem[] = [];
   for (const f of pendingApprovals.value) {
     const inv = invoices.value.find(i => i.id === f.invoice_id) ?? null;
-    const cust = data.value.customers.find(c => c.id === f.customer_id);
-    items.push({
-      id: 'app-' + f.id,
-      customer: cust?.name || 'Customer',
-      invoiceNumber: inv?.invoice_number || '—',
-      issue: 'Reminder awaiting approval',
-      tag: 'Approval',
-      tagClass: 'bg-blue-50 text-blue-700',
-      invoice: inv,
-    });
+    items.push({ key: 'a' + f.id, kind: 'Approval', customer: inv?.customer?.name ?? '—', invoice: inv, text: 'Reminder ready for your approval' });
   }
-
-  // 2. Exceptions
   for (const e of exceptions.value) {
-    items.push({
-      id: 'exc-' + e.invoice.id + '-' + e.title,
-      customer: e.invoice.customer?.name || 'Customer',
-      invoiceNumber: e.invoice.invoice_number,
-      issue: e.reason || e.title,
-      tag: 'Exception',
-      tagClass: 'bg-rose-50 text-rose-700',
-      invoice: e.invoice,
-    });
+    items.push({ key: 'e' + e.invoice.id + e.reason, kind: 'Exception', customer: e.invoice.customer?.name ?? '—', invoice: e.invoice, text: e.reason });
   }
-
-  // 3. Red customers
-  const redPriorities = priorityList.value.filter(p => p.level === 'red');
-  for (const p of redPriorities) {
-    const custInvoices = invoices.value.filter(i => i.customer_id === p.customerId);
-    const primaryInv = custInvoices.find(i => i.outstanding_balance > 0) || custInvoices[0] || null;
-    items.push({
-      id: 'red-' + p.customerId,
-      customer: p.customerName,
-      invoiceNumber: primaryInv ? primaryInv.invoice_number : 'Multiple',
-      issue: formatShortPriorityReason(p, invoices.value),
-      tag: 'Priority',
-      tagClass: 'bg-rose-50 text-rose-700',
-      invoice: primaryInv,
-    });
+  for (const p of priorities.value.filter(x => x.level === 'red')) {
+    const inv = invoices.value.find(i => i.id === p.supportingInvoiceIds[0]) ?? null;
+    items.push({ key: 'r' + p.customerId, kind: 'Overdue', customer: p.customerName, invoice: inv, text: formatShortPriorityReason(p, invoices.value).replace(/^INV-\d+ · /, '').replace(/ · INV-\d+$/, '') });
   }
-
-  return items.slice(0, 6);
-});
-
-// Invoice Table Filters
-const search = ref('');
-const statusFilter = ref('all');
-const sortBy = ref<'overdue' | 'dueDate' | 'outstanding'>('overdue');
-const showSettledHistory = ref(false);
-const currentPage = ref(0);
-const pageSize = 10;
-const selectedId = ref<string | null>(null);
-const drawerOpen = ref(false);
-
-const filteredInvoices = computed(() => {
-  let list = invoices.value;
-  // Hide HIST-* settled history unless toggled
-  if (!showSettledHistory.value) {
-    list = list.filter(i => !i.invoice_number.startsWith('HIST-'));
-  }
-  // Status filter
-  if (statusFilter.value !== 'all') {
-    list = list.filter(i => i.status === statusFilter.value);
-  }
-  // Search filter
-  if (search.value.trim()) {
-    const q = search.value.toLowerCase().trim();
-    list = list.filter(i =>
-      i.invoice_number.toLowerCase().includes(q) ||
-      (i.customer?.name.toLowerCase().includes(q) ?? false)
-    );
-  }
-  // Default sort by days overdue desc, then due date
-  return [...list].sort((a, b) => {
-    if (sortBy.value === 'overdue') {
-      if (b.days_overdue !== a.days_overdue) {
-        return b.days_overdue - a.days_overdue;
-      }
-      return a.due_date.localeCompare(b.due_date);
-    }
-    if (sortBy.value === 'dueDate') {
-      return a.due_date.localeCompare(b.due_date);
-    }
-    return b.outstanding_balance - a.outstanding_balance;
+  const seen = new Set<string>();
+  const customers = new Set<string>();
+  return items.filter(it => {
+    const k = `${it.customer}|${it.invoice?.id}`;
+    if (seen.has(k) || (it.kind === 'Overdue' && customers.has(it.customer))) return false;
+    seen.add(k);
+    customers.add(it.customer);
+    return true;
   });
 });
+const queuePreview = computed(() => queue.value.slice(0, 5));
+const kindClass: Record<QueueItem['kind'], string> = {
+  Approval: 'bg-blue-50 text-blue-700',
+  Exception: 'bg-amber-50 text-amber-800',
+  Overdue: 'bg-rose-50 text-rose-700',
+};
 
-const pages = computed(() => Math.max(1, Math.ceil(filteredInvoices.value.length / pageSize)));
-const pageData = computed(() =>
-  filteredInvoices.value.slice(
-    Math.min(currentPage.value, pages.value - 1) * pageSize,
-    (Math.min(currentPage.value, pages.value - 1) + 1) * pageSize
-  )
-);
+/* ---------- Overdue aging ---------- */
+const aging = computed(() => {
+  const buckets = [
+    { label: '1–7 days', min: 1, max: 7, color: 'bg-blue-500' },
+    { label: '8–14 days', min: 8, max: 14, color: 'bg-amber-400' },
+    { label: '15–21 days', min: 15, max: 21, color: 'bg-orange-500' },
+    { label: 'Over 21 days', min: 22, max: Infinity, color: 'bg-rose-500' },
+  ].map(b => {
+    const m = overdueInvoices.value.filter(i => i.days_overdue >= b.min && i.days_overdue <= b.max);
+    return { ...b, count: m.length, amount: sumMoney(m.map(i => i.outstanding_balance)) };
+  });
+  const max = Math.max(1, ...buckets.map(b => b.amount));
+  return buckets.map(b => ({ ...b, pct: Math.max(b.amount ? 2 : 0, Math.round((b.amount / max) * 100)) }));
+});
 
-watch([search, statusFilter, sortBy, showSettledHistory], () => currentPage.value = 0);
+/* ---------- Payments chart: last 30 days, daily ---------- */
+const paymentsChart = computed(() => {
+  const end = new Date(today.value + 'T12:00:00');
+  const days: string[] = [];
+  for (let k = 29; k >= 0; k--) {
+    const d = new Date(end);
+    d.setDate(d.getDate() - k);
+    days.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  }
+  const byDay = new Map<string, number>();
+  for (const p of recordedPayments.value) byDay.set(p.payment_date, (byDay.get(p.payment_date) ?? 0) + p.amount);
+  return {
+    labels: days.map(d => new Date(d + 'T12:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })),
+    datasets: [{
+      label: 'Payments (MYR)',
+      data: days.map(d => byDay.get(d) ?? 0),
+      backgroundColor: '#1D4ED8',
+      hoverBackgroundColor: '#1E40AF',
+      borderRadius: 3,
+      maxBarThickness: 14,
+    }],
+  };
+});
+const paymentsLast30 = computed(() => sumMoney(paymentsChart.value.datasets[0].data));
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { mode: 'index' as const, intersect: false },
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { display: false }, ticks: { maxTicksLimit: 6, color: '#64748B', font: { size: 12 } } },
+    y: { grid: { color: '#F1F5F9' }, border: { display: false }, ticks: { maxTicksLimit: 4, color: '#64748B', font: { size: 12 } } },
+  },
+};
 
-const selectedInvoice = computed(() => invoices.value.find(i => i.id === selectedId.value) ?? null);
-
+/* ---------- Drawer ---------- */
+const selectedId = ref<string | null>(null);
+const drawerOpen = ref(false);
+const selectedInvoice = computed(() => allInvoices.value.find(i => i.id === selectedId.value) ?? null);
 function openInvoice(i: InvoiceWithCustomer | null) {
   if (!i) return;
   selectedId.value = i.id;
   drawerOpen.value = true;
 }
-
-// Insights Charts & Aging
-const aging = computed(() => [
-  { label: '1–7 days', min: 1, max: 7 },
-  { label: '8–14 days', min: 8, max: 14 },
-  { label: '15–21 days', min: 15, max: 21 },
-  { label: '21+ days', min: 22, max: 9999 },
-].map(b => {
-  const matched = overdueInvoices.value.filter(i => {
-    const d = daysOverdue(i.due_date, today.value);
-    return d >= b.min && d <= b.max;
-  });
-  return { label: b.label, count: matched.length, amount: sumMoney(matched.map(i => i.outstanding_balance)) };
-}));
-
-const statusChart = computed(() => ({
-  labels: ['Paid', 'Pending', 'Overdue'],
-  datasets: [{
-    data: [
-      invoices.value.filter(i => i.status === 'paid').length,
-      invoices.value.filter(i => i.status === 'pending').length,
-      overdueInvoices.value.length,
-    ],
-    backgroundColor: ['#10B981', '#F59E0B', '#EF4444'],
-    borderWidth: 0,
-    spacing: 2,
-  }],
-}));
-
-const trendChart = computed(() => {
-  const map = new Map<string, number>();
-  data.value.payments
-    .filter(p => p.business_id === currentUser.value.business_id && p.verification_status === 'recorded')
-    .forEach(p => map.set(p.payment_date, (map.get(p.payment_date) || 0) + p.amount));
-  const a = [...map.entries()].sort((x, y) => x[0].localeCompare(y[0]));
-  return {
-    labels: a.map(x => x[0].slice(5)),
-    datasets: [{
-      label: 'Recorded payments (MYR)',
-      data: a.map(x => x[1]),
-      borderColor: '#1D4ED8',
-      backgroundColor: 'rgba(29, 78, 216, 0.08)',
-      pointBackgroundColor: '#1D4ED8',
-      fill: true,
-      tension: 0.3,
-    }],
-  };
-});
-
-const chartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { position: 'bottom' as const, labels: { boxWidth: 10, font: { size: 11 } } } },
-};
 </script>
 
 <template>
-  <div class="space-y-5">
-    <!-- Top Bar: Period Controls -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <div>
-        <p class="text-xs font-medium text-slate-500">Financial overview · {{ currentBusiness?.name }}</p>
-      </div>
-      <div class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm self-start sm:self-auto">
+  <div class="space-y-6">
+    <!-- Context + period -->
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p class="text-sm text-slate-600">{{ currentBusiness?.name }} · as of {{ formatDate(today) }}</p>
+      <div class="inline-flex self-start rounded-lg border border-slate-200 bg-white p-1 sm:self-auto" role="tablist" aria-label="Reporting period">
         <button
-          v-for="opt in dateFilterOptions"
-          :key="opt.id"
-          @click="dateFilter = opt.id"
-          class="rounded px-2.5 py-1 text-xs font-medium transition"
-          :class="dateFilter === opt.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'"
+          v-for="p in periods"
+          :key="p.id"
+          role="tab"
+          :aria-selected="period === p.id"
+          class="rounded-md px-3 py-1.5 text-xs font-medium transition"
+          :class="period === p.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
+          @click="period = p.id"
         >
-          {{ opt.label }}
+          {{ p.label }}
         </button>
       </div>
     </div>
 
-    <!-- Custom date inputs if selected -->
-    <div v-if="dateFilter === 'custom'" class="card flex gap-3 items-center p-2.5 text-xs">
-      <input v-model="customStart" type="date" class="form-input !mt-0 max-w-[150px]" />
-      <span class="text-slate-400">to</span>
-      <input v-model="customEnd" type="date" class="form-input !mt-0 max-w-[150px]" />
+    <!-- KPIs -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <RouterLink v-for="k in kpis" :key="k.label" :to="k.to" class="card group block p-5 transition hover:border-slate-300">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-medium text-slate-600">{{ k.label }}</p>
+          <ArrowRight class="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
+        </div>
+        <p class="mt-2 text-2xl font-semibold tracking-tight tabular-nums" :class="k.tone">{{ k.value }}</p>
+        <p class="mt-1 text-[13px] text-slate-500">{{ k.sub }}</p>
+      </RouterLink>
     </div>
 
-    <!-- 4 KPI Cards (label, number, one small sub-line, no icons) -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-      <div v-for="k in kpis" :key="k.label" class="card p-4">
-        <p class="text-xs font-medium text-slate-500">{{ k.label }}</p>
-        <p class="text-xl sm:text-2xl font-bold text-slate-900 mt-1 tabular-nums">{{ k.value }}</p>
-        <p class="text-[11px] text-slate-500 mt-1 truncate">{{ k.sub }}</p>
-      </div>
-    </div>
-
-    <!-- Needs Action List (max 6 items) -->
-    <section class="card overflow-hidden">
-      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-        <div>
-          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Needs action</h2>
-        </div>
-        <span class="text-[11px] text-slate-500 tabular-nums">{{ needsActionItems.length }} item{{ needsActionItems.length === 1 ? '' : 's' }}</span>
-      </div>
-      <div v-if="needsActionItems.length" class="divide-y divide-slate-100">
-        <div
-          v-for="item in needsActionItems"
-          :key="item.id"
-          class="px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/70 transition"
-        >
-          <div class="min-w-0 flex-1 flex items-center gap-2.5">
-            <span class="rounded px-1.5 py-0.5 text-[10px] font-medium shrink-0" :class="item.tagClass">
-              {{ item.tag }}
-            </span>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1.5 truncate">
-                <span class="text-xs font-semibold text-slate-900 truncate">{{ item.customer }}</span>
-                <span class="text-[11px] font-mono text-slate-400">· {{ item.invoiceNumber }}</span>
-              </div>
-              <p class="text-[11px] text-slate-500 truncate">{{ item.issue }}</p>
-            </div>
+    <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <!-- Today's priorities -->
+      <section class="card overflow-hidden xl:col-span-2">
+        <header class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 class="text-base font-semibold text-slate-900">Today's priorities</h2>
+            <p class="mt-0.5 text-[13px] text-slate-500">{{ plural(queue.length, 'item') }} waiting on you</p>
           </div>
-          <button
-            class="outline-btn !py-1 !px-2.5 shrink-0"
-            @click="openInvoice(item.invoice)"
-          >
-            Review
-          </button>
-        </div>
-      </div>
-      <div v-else class="p-6 text-center text-xs text-slate-400">
-        No immediate actions requiring review.
-      </div>
-    </section>
-
-    <!-- Customer Priorities Section -->
-    <section class="card overflow-hidden">
-      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-        <div>
-          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">
-            Customer priorities
-          </h2>
-        </div>
-        <button
-          class="text-xs text-blue-700 hover:text-blue-800 font-medium"
-          @click="showAllPriorities = !showAllPriorities"
-        >
-          {{ showAllPriorities ? 'Show urgent only' : 'Show all' }}
-        </button>
-      </div>
-
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs">
-          <thead>
-            <tr class="border-b border-slate-100 text-slate-400 font-medium">
-              <th class="px-4 py-2.5">Customer</th>
-              <th class="px-4 py-2.5">Priority</th>
-              <th class="px-4 py-2.5">Reason</th>
-              <th class="px-4 py-2.5 text-right">Details</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            <template v-for="p in visiblePriorities" :key="p.customerId">
-              <tr class="hover:bg-slate-50/60 transition">
-                <td class="px-4 py-2 font-medium text-slate-900">{{ p.customerName }}</td>
-                <td class="px-4 py-2">
-                  <span class="rounded px-2 py-0.5 text-[10px] font-medium" :class="priorityBadgeClass(p.level)">
-                    {{ p.label }}
-                  </span>
-                </td>
-                <td class="px-4 py-2 text-slate-600 max-w-sm truncate">
-                  {{ formatShortPriorityReason(p, invoices) }}
-                </td>
-                <td class="px-4 py-2 text-right">
-                  <button
-                    class="text-slate-500 hover:text-slate-900 text-[11px] font-medium"
-                    @click="expandedPriority = expandedPriority === p.customerId ? null : p.customerId"
-                  >
-                    {{ expandedPriority === p.customerId ? 'Hide' : 'Explain' }}
-                  </button>
-                </td>
-              </tr>
-              <tr v-if="expandedPriority === p.customerId" class="bg-slate-50/80">
-                <td colspan="4" class="px-4 py-3 text-[11px] text-slate-600 space-y-1.5">
-                  <p><strong>Supporting invoices:</strong> {{ priorityInvoiceRefs(p) }}</p>
-                  <p><strong>Last 5 settled:</strong> {{ p.settledCount }} · <strong>Late:</strong> {{ p.lateCount }}</p>
-                  <p v-for="x in p.lastFiveSettled" :key="x.invoiceId" class="text-slate-500">
-                    {{ x.invoiceNumber }}: due {{ formatDate(x.dueDate) }}, settled {{ formatDate(x.settledDate) }} — {{ x.late ? `Late (${x.daysLate}d)` : 'On time' }}
-                  </p>
-                  <p v-for="flag in p.reviewFlags" :key="flag" class="text-amber-700 font-medium">⚠ {{ flag }}</p>
-                  <p class="text-slate-400 text-[10px]">As of {{ formatDate(today) }}</p>
-                </td>
-              </tr>
-            </template>
-            <tr v-if="!visiblePriorities.length">
-              <td colspan="4" class="p-4 text-center text-slate-400">
-                No customer priorities in this view.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Invoice Table Section -->
-    <section class="card overflow-hidden">
-      <div class="px-4 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Invoices</h2>
-
-        <!-- Filters and search -->
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="relative">
-            <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              v-model="search"
-              placeholder="Filter invoices..."
-              class="form-input !mt-0 pl-8 !py-1 text-xs max-w-[170px]"
-            />
-          </div>
-
-          <select v-model="statusFilter" class="form-input !mt-0 !py-1 text-xs w-auto">
-            <option value="all">All statuses</option>
-            <option value="overdue">Overdue</option>
-            <option value="pending">Pending</option>
-            <option value="paid">Paid</option>
-          </select>
-
-          <select v-model="sortBy" class="form-input !mt-0 !py-1 text-xs w-auto">
-            <option value="overdue">Sort: Overdue days</option>
-            <option value="dueDate">Sort: Due date</option>
-            <option value="outstanding">Sort: Outstanding</option>
-          </select>
-
-          <label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer select-none ml-1">
-            <input
-              type="checkbox"
-              v-model="showSettledHistory"
-              class="rounded border-slate-300 text-blue-600 focus:ring-0"
-            />
-            <span>Settled history</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- Compact Invoices Table -->
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs">
-          <thead>
-            <tr class="border-b border-slate-100 text-slate-400 font-medium">
-              <th class="px-4 py-2.5">Invoice</th>
-              <th class="px-4 py-2.5">Customer</th>
-              <th class="px-4 py-2.5 text-right">Amount</th>
-              <th class="px-4 py-2.5 text-right">Outstanding</th>
-              <th class="px-4 py-2.5">Due date</th>
-              <th class="px-4 py-2.5">Status</th>
-              <th class="px-4 py-2.5 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            <tr
-              v-for="i in pageData"
-              :key="i.id"
-              class="hover:bg-slate-50/60 transition cursor-pointer"
-              @click="openInvoice(i)"
-            >
-              <td class="px-4 py-2 font-mono font-medium text-slate-900">{{ i.invoice_number }}</td>
-              <td class="px-4 py-2 font-medium text-slate-800">{{ i.customer?.name || '—' }}</td>
-              <td class="px-4 py-2 text-right tabular-nums text-slate-500">{{ formatMYR(i.invoice_amount) }}</td>
-              <td class="px-4 py-2 text-right tabular-nums font-semibold" :class="i.outstanding_balance > 0 ? 'text-slate-900' : 'text-slate-400'">
-                {{ formatMYR(i.outstanding_balance) }}
-              </td>
-              <td class="px-4 py-2 text-slate-600 tabular-nums">
-                {{ formatDate(i.due_date) }}
-                <span v-if="i.days_overdue > 0" class="text-[10px] text-rose-600 font-medium ml-1">
-                  ({{ i.days_overdue }}d overdue)
+          <RouterLink to="/action-center" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800">
+            Action Center <ArrowRight class="h-4 w-4" />
+          </RouterLink>
+        </header>
+        <ul v-if="queuePreview.length" class="divide-y divide-slate-100">
+          <li v-for="item in queuePreview" :key="item.key">
+            <button type="button" class="flex w-full items-center gap-4 px-5 py-3.5 text-left transition hover:bg-slate-50" @click="openInvoice(item.invoice)">
+              <span class="w-[78px] shrink-0 rounded-md px-2 py-1 text-center text-[12px] font-medium" :class="kindClass[item.kind]">{{ item.kind }}</span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm font-medium text-slate-900">{{ item.customer }}</span>
+                <span class="block truncate text-[13px] text-slate-500">
+                  <span class="font-mono">{{ item.invoice?.invoice_number }}</span> · {{ item.text }}
                 </span>
-              </td>
-              <td class="px-4 py-2">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <StatusBadge :status="i.status" />
-                  <span
-                    v-for="chip in getDerivedLabelChips(i)"
-                    :key="chip.text"
-                    class="rounded px-1.5 py-0.5 text-[10px] font-medium"
-                    :class="chip.className"
-                  >
-                    {{ chip.text }}
-                  </span>
-                </div>
-              </td>
-              <td class="px-4 py-2 text-right" @click.stop>
-                <button
-                  class="text-blue-700 hover:text-blue-800 text-[11px] font-medium inline-flex items-center gap-1"
-                  @click="openInvoice(i)"
-                >
-                  <Eye class="w-3.5 h-3.5" /> View
-                </button>
-              </td>
-            </tr>
-            <tr v-if="!pageData.length">
-              <td colspan="7" class="p-6 text-center text-slate-400">
-                No invoices match the selected criteria.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Pagination -->
-      <div class="flex items-center justify-between border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500">
-        <span class="tabular-nums">Page {{ Math.min(currentPage + 1, pages) }} of {{ pages }} ({{ filteredInvoices.length }} invoices)</span>
-        <div class="flex gap-1">
-          <button
-            class="outline-btn !p-1.5"
-            :disabled="currentPage <= 0"
-            @click="currentPage--"
-            aria-label="Previous page"
-          >
-            <ChevronLeft class="w-3.5 h-3.5" />
-          </button>
-          <button
-            class="outline-btn !p-1.5"
-            :disabled="currentPage >= pages - 1"
-            @click="currentPage++"
-            aria-label="Next page"
-          >
-            <ChevronRight class="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Insights Section (Aging + Charts) -->
-    <section class="card p-4 sm:p-5 space-y-4">
-      <div>
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Insights</h2>
-        <p class="text-[11px] text-slate-500 mt-0.5">Overdue aging distribution and collection velocity</p>
-      </div>
-
-      <!-- Aging Buckets -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        <div
-          v-for="b in aging"
-          :key="b.label"
-          class="rounded-lg border border-slate-200 bg-slate-50/60 p-3"
+              </span>
+              <span class="hidden shrink-0 text-right sm:block">
+                <span class="block text-sm font-semibold text-slate-900 tabular-nums">{{ formatMYR(item.invoice?.outstanding_balance ?? 0) }}</span>
+                <span v-if="item.invoice?.days_overdue" class="block text-[12px] text-rose-600">{{ plural(item.invoice.days_overdue, 'day') }} overdue</span>
+              </span>
+              <ChevronRight class="h-4 w-4 shrink-0 text-slate-300" />
+            </button>
+          </li>
+        </ul>
+        <p v-else class="px-5 py-10 text-center text-sm text-slate-500">You're all caught up.</p>
+        <RouterLink
+          v-if="queue.length > queuePreview.length"
+          to="/action-center"
+          class="block border-t border-slate-100 px-5 py-3 text-center text-xs font-medium text-slate-600 hover:bg-slate-50"
         >
-          <p class="text-[11px] text-slate-500">{{ b.label }}</p>
-          <p class="text-lg font-bold text-slate-900 mt-0.5 tabular-nums">{{ b.count }}</p>
-          <p class="text-xs text-slate-600 mt-0.5 tabular-nums">{{ formatMYR(b.amount) }}</p>
-        </div>
-      </div>
+          View {{ queue.length - queuePreview.length }} more in Action Center
+        </RouterLink>
+      </section>
 
-      <!-- Charts -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
-        <div class="rounded-lg border border-slate-200 p-3.5 bg-white">
-          <p class="text-xs font-semibold text-slate-800 mb-2">Invoice status breakdown</p>
-          <div class="h-[180px]">
-            <Doughnut :data="statusChart" :options="chartOptions" />
+      <!-- Customer health -->
+      <section class="card flex flex-col">
+        <header class="border-b border-slate-100 px-5 py-4">
+          <h2 class="text-base font-semibold text-slate-900">Customer health</h2>
+          <p class="mt-0.5 text-[13px] text-slate-500">{{ plural(priorities.length, 'customer') }} · rule-based, not a credit score</p>
+        </header>
+        <div class="space-y-4 px-5 py-4">
+          <div class="flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+            <div
+              v-for="l in levelCounts"
+              :key="l.id"
+              :class="l.color"
+              :style="{ width: priorities.length ? (l.count / priorities.length) * 100 + '%' : '0%' }"
+            ></div>
           </div>
+          <ul class="space-y-2">
+            <li v-for="l in levelCounts" :key="l.id">
+              <RouterLink :to="`/customers?level=${l.id}`" class="flex items-center gap-2.5 rounded text-xs text-slate-700 hover:text-slate-900">
+                <span class="h-2.5 w-2.5 shrink-0 rounded-full" :class="l.color"></span>
+                <span>{{ l.label }}</span>
+                <span class="ml-auto font-semibold tabular-nums text-slate-900">{{ l.count }}</span>
+              </RouterLink>
+            </li>
+          </ul>
         </div>
-        <div class="rounded-lg border border-slate-200 p-3.5 bg-white">
-          <p class="text-xs font-semibold text-slate-800 mb-2">Payment collection velocity</p>
-          <div class="h-[180px]">
-            <Line :data="trendChart" :options="chartOptions" />
-          </div>
+        <div class="flex-1 border-t border-slate-100 px-5 py-4">
+          <p class="text-[13px] font-medium text-slate-500">Most urgent</p>
+          <ul class="mt-2 space-y-2.5">
+            <li v-for="p in topAttention" :key="p.customerId" class="min-w-0">
+              <span class="block truncate text-sm font-medium text-slate-900">{{ p.customerName }}</span>
+              <span class="block truncate text-[13px] text-slate-500">{{ formatShortPriorityReason(p, invoices) }}</span>
+            </li>
+            <li v-if="!topAttention.length" class="text-[13px] text-slate-500">No customers need urgent attention.</li>
+          </ul>
         </div>
-      </div>
-    </section>
+        <RouterLink to="/customers" class="block border-t border-slate-100 px-5 py-3 text-center text-xs font-medium text-slate-600 hover:bg-slate-50">
+          View all customers
+        </RouterLink>
+      </section>
+    </div>
 
-    <!-- Invoice Detail Drawer -->
+    <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <!-- Overdue aging -->
+      <section class="card">
+        <header class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 class="text-base font-semibold text-slate-900">Overdue by age</h2>
+            <p class="mt-0.5 text-[13px] text-slate-500">{{ plural(overdueInvoices.length, 'overdue invoice') }} · {{ formatMYR(overdueTotal) }}</p>
+          </div>
+          <RouterLink to="/invoices?status=overdue" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800">
+            Invoices <ArrowRight class="h-4 w-4" />
+          </RouterLink>
+        </header>
+        <ul class="space-y-4 px-5 py-5">
+          <li v-for="b in aging" :key="b.label">
+            <div class="flex items-baseline justify-between text-xs">
+              <span class="text-slate-700">{{ b.label }} <span class="text-slate-400">· {{ plural(b.count, 'invoice') }}</span></span>
+              <span class="font-semibold text-slate-900 tabular-nums">{{ formatMYR(b.amount) }}</span>
+            </div>
+            <div class="mt-1.5 h-2 rounded-full bg-slate-100">
+              <div class="h-2 rounded-full" :class="b.color" :style="{ width: b.pct + '%' }"></div>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- Payments -->
+      <section class="card">
+        <header class="border-b border-slate-100 px-5 py-4">
+          <h2 class="text-base font-semibold text-slate-900">Payments received</h2>
+          <p class="mt-0.5 text-[13px] text-slate-500">Last 30 days · {{ formatMYR(paymentsLast30) }}</p>
+        </header>
+        <div class="h-[232px] px-4 py-4">
+          <Bar :data="paymentsChart" :options="chartOptions" />
+        </div>
+      </section>
+    </div>
+
     <InvoiceDetailDrawer
       :invoice="selectedInvoice"
       :open="drawerOpen"

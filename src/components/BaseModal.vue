@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { X } from 'lucide-vue-next';
-withDefaults(defineProps<{ open: boolean; title: string; width?: string }>(), { width: 'max-w-md' });
+import { useEscape } from '@/composables/useEscape';
+const props = withDefaults(defineProps<{ open: boolean; title: string; width?: string }>(), { width: 'max-w-md' });
 const emit = defineEmits<{ close: [] }>();
+useEscape(() => { if (props.open) emit('close'); });
 </script>
 
 <template>

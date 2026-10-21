@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue';
-import { AlertTriangle, Check, Send, AlertCircle, MoreHorizontal } from 'lucide-vue-next';
+import { AlertTriangle, Check, Send, MoreHorizontal, CheckCircle2, XCircle, ShieldCheck } from 'lucide-vue-next';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { useCurrentUser } from '@/composables/useCurrentUser';
 import { computeInvoiceWithCustomer, updateCustomerResponse } from '@/lib/store';
@@ -12,12 +12,18 @@ import { formatMYR, formatDate, formatDateTime, daysOverdue } from '@/lib/format
 import {
   formatCheckpoint, formatApprovalState, formatSendState,
   formatDeliveryStatus, formatAiCategory, formatReviewStatus, formatActivityText,
-  formatOverdueDays,
+  formatOverdueDays, formatTextDates, reminderSafetyChecks, plural,
 } from '@/lib/display';
+import { useToast } from '@/composables/useToast';
+import { useEscape } from '@/composables/useEscape';
+import ActivityTimeline from '@/components/ActivityTimeline.vue';
+import TelegramPreview from '@/components/TelegramPreview.vue';
 import type { FollowUpAction, InvoiceWithCustomer } from '@/types';
 import BaseModal from '@/components/BaseModal.vue';
 import InvoiceDetailDrawer from '@/components/InvoiceDetailDrawer.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
+
+const toast = useToast();
 
 const { data, refreshStore } = useDemoStore();
 const { currentUser, currentBusiness } = useCurrentUser();
@@ -100,6 +106,17 @@ const activity = computed(() =>
     .slice(0, 50)
 );
 
+const today = computed(() => data.value.demoState.simulated_date);
+function checksFor(f: FollowUpAction & { invoice?: InvoiceWithCustomer }) {
+  return reminderSafetyChecks(f, f.invoice, data.value, today.value);
+}
+function isOpen(f: FollowUpAction) {
+  return f.send_state === 'not_sent' && (f.approval_state === 'pending' || f.approval_state === 'approved');
+}
+function wasCancelledByCheck(f: FollowUpAction) {
+  return f.send_state === 'cancelled' && f.approval_state === 'cancelled' && !!f.delivery_status && f.delivery_status !== 'seller_decision_required';
+}
+
 const tab = ref<'all' | 'approval' | 'responses' | 'exceptions' | 'history'>('all');
 const tabs = computed(() => [
   { id: 'all', label: 'All', count: 0 },
@@ -114,8 +131,6 @@ const drawerOpen = ref(false);
 const editId = ref<string | null>(null);
 const editText = ref('');
 const editError = ref('');
-const toast = ref('');
-const toastIsError = ref(false);
 
 // Active "⋯" more options menu id
 const activeMenuId = ref<string | null>(null);
@@ -129,6 +144,7 @@ function closeMenu() {
 }
 
 const onGlobalClick = () => closeMenu();
+useEscape(closeMenu);
 onMounted(() => window.addEventListener('click', onGlobalClick));
 onUnmounted(() => window.removeEventListener('click', onGlobalClick));
 
@@ -140,15 +156,9 @@ function openInvoice(i: InvoiceWithCustomer) {
   drawerOpen.value = true;
 }
 
-let toastTimer: ReturnType<typeof setTimeout> | undefined;
 function notice(msg: string, isError = false) {
-  toast.value = msg;
-  toastIsError.value = isError;
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toast.value = '';
-    toastIsError.value = false;
-  }, 4200);
+  if (isError) toast.error(msg);
+  else toast.success(msg);
 }
 
 function execute(fn: () => { success: boolean; error?: string }, ok: string) {
@@ -231,17 +241,6 @@ function keepResponseOnHold() {
 
 <template>
   <div class="space-y-4">
-    <!-- Feedback Toast -->
-    <div
-      v-if="toast"
-      role="status"
-      class="fixed right-5 top-16 z-50 rounded-lg p-3 text-xs text-white shadow-popover flex items-center gap-2"
-      :class="toastIsError ? 'bg-red-600' : 'bg-slate-900'"
-    >
-      <AlertCircle v-if="toastIsError" class="w-4 h-4 shrink-0" />
-      <span>{{ toast }}</span>
-    </div>
-
     <!-- Tabs Header -->
     <div class="flex flex-wrap gap-1 p-1 border-b border-slate-200">
       <button
@@ -254,7 +253,7 @@ function keepResponseOnHold() {
         {{ t.label }}
         <span
           v-if="t.count"
-          class="ml-1 rounded px-1.5 py-0.2 text-[10px] tabular-nums"
+          class="ml-1 rounded px-1.5 py-0.2 text-[12px] tabular-nums"
           :class="tab === t.id ? 'bg-white/20' : 'bg-slate-100 text-slate-700'"
         >
           {{ t.count }}
@@ -265,8 +264,8 @@ function keepResponseOnHold() {
     <!-- Section 1: Reminder Approvals -->
     <section v-if="tab === 'all' || tab === 'approval'" class="space-y-3">
       <div class="flex items-center justify-between">
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Reminder approvals</h2>
-        <span class="text-[11px] text-slate-500">{{ currentBusiness?.name }}</span>
+        <h2 class="text-base font-semibold text-slate-900">Reminder approvals</h2>
+        <span class="text-[13px] text-slate-500">{{ currentBusiness?.name }}</span>
       </div>
 
       <p v-if="!followUps.length" class="card p-6 text-center text-xs text-slate-400">
@@ -287,19 +286,19 @@ function keepResponseOnHold() {
             <!-- Key metadata -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-600 py-1 tabular-nums">
               <div>
-                <span class="text-slate-400 block text-[11px]">Recipient</span>
+                <span class="text-slate-400 block text-[13px]">Recipient</span>
                 <span class="font-medium text-slate-800">{{ f.recipient || f.customer?.phone || 'No phone recorded' }}</span>
               </div>
               <div>
-                <span class="text-slate-400 block text-[11px]">Outstanding</span>
+                <span class="text-slate-400 block text-[13px]">Outstanding</span>
                 <span class="font-semibold text-slate-900">{{ formatMYR(f.invoice?.outstanding_balance || 0) }}</span>
               </div>
               <div>
-                <span class="text-slate-400 block text-[11px]">Due date</span>
+                <span class="text-slate-400 block text-[13px]">Due date</span>
                 <span>{{ formatDate(f.invoice?.due_date || '') }}</span>
               </div>
               <div>
-                <span class="text-slate-400 block text-[11px]">Duration</span>
+                <span class="text-slate-400 block text-[13px]">Duration</span>
                 <span :class="f.invoice?.days_overdue ? 'text-rose-600 font-medium' : 'text-slate-600'">
                   {{ formatOverdueDays(f.invoice?.days_overdue || 0) }}
                 </span>
@@ -310,23 +309,42 @@ function keepResponseOnHold() {
               <span class="font-medium text-slate-700">{{ formatCheckpoint(f.checkpoint) }}:</span> {{ f.reason }}
             </p>
 
-            <!-- Exact Message in normal font -->
-            <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
-              {{ f.message }}
+            <!-- Message preview (Telegram-style) -->
+            <TelegramPreview :message="f.message" :recipient-name="f.customer?.name" :sender-name="currentBusiness?.name" />
+
+            <!-- Safety checks (display only; the send action re-checks on its own) -->
+            <div v-if="isOpen(f)" class="rounded-lg border border-slate-200 bg-white p-3">
+              <p class="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
+                <ShieldCheck class="h-3.5 w-3.5 text-slate-500" />
+                Safety checks before {{ f.approval_state === 'approved' ? 'sending' : 'approval' }}
+                <span class="ml-auto text-[13px] font-normal text-slate-500 tabular-nums">
+                  {{ checksFor(f).filter(c => c.ok).length }}/{{ checksFor(f).length }} passed
+                </span>
+              </p>
+              <ul class="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+                <li v-for="c in checksFor(f)" :key="c.label" class="flex items-center gap-1.5 text-[13px]" :class="c.ok ? 'text-slate-700' : 'font-medium text-rose-700'">
+                  <CheckCircle2 v-if="c.ok" class="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  <XCircle v-else class="h-3.5 w-3.5 shrink-0 text-rose-600" />
+                  {{ c.label }}
+                </li>
+              </ul>
+            </div>
+            <div v-else-if="wasCancelledByCheck(f)" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] text-rose-800">
+              <strong>Not sent.</strong> Stopped by a safety check: {{ f.delivery_status }}.
             </div>
 
             <!-- State chips -->
-            <div class="flex flex-wrap gap-1.5 items-center text-[11px] pt-1">
+            <div class="flex flex-wrap gap-1.5 items-center text-[13px] pt-1">
               <span class="rounded px-2 py-0.5 font-medium bg-amber-50 text-amber-700">
                 {{ formatApprovalState(f.approval_state) }}
               </span>
               <span class="rounded px-2 py-0.5 font-medium bg-slate-100 text-slate-600">
                 {{ formatSendState(f.send_state) }}
               </span>
-              <span v-if="f.delivery_status" class="rounded px-2 py-0.5 font-medium bg-blue-50 text-blue-700">
+              <span v-if="f.delivery_status && !wasCancelledByCheck(f)" class="rounded px-2 py-0.5 font-medium bg-blue-50 text-blue-700">
                 {{ formatDeliveryStatus(f.delivery_status) }}
               </span>
-              <span v-if="f.approved_at" class="text-slate-400 text-[10px] tabular-nums">
+              <span v-if="f.approved_at" class="text-slate-400 text-[12px] tabular-nums">
                 Approved {{ formatDateTime(f.approved_at) }}
               </span>
             </div>
@@ -396,8 +414,8 @@ function keepResponseOnHold() {
     <!-- Section 2: Customer Responses -->
     <section v-if="tab === 'all' || tab === 'responses'" class="space-y-3">
       <div class="flex items-center justify-between">
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Customer responses</h2>
-        <span class="text-[11px] text-slate-500">{{ currentBusiness?.name }}</span>
+        <h2 class="text-base font-semibold text-slate-900">Customer responses</h2>
+        <span class="text-[13px] text-slate-500">{{ currentBusiness?.name }}</span>
       </div>
 
       <p v-if="!responses.length" class="card p-6 text-center text-xs text-slate-400">
@@ -423,23 +441,23 @@ function keepResponseOnHold() {
             <!-- Details: category, suggested action -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
               <div class="rounded-lg border border-slate-200 p-2.5 bg-white">
-                <span class="text-[11px] text-slate-500 block">Classification</span>
+                <span class="text-[13px] text-slate-500 block">Classification</span>
                 <span class="font-medium text-slate-900 mt-0.5 block">
                   {{ formatAiCategory(r.ai_category) }}
                 </span>
-                <span v-if="r.ai_confidence !== null" class="text-[10px] text-slate-400 mt-0.5 block tabular-nums">
+                <span v-if="r.ai_confidence !== null" class="text-[12px] text-slate-400 mt-0.5 block tabular-nums">
                   Confidence: {{ Math.round(r.ai_confidence * 100) }}%
                 </span>
               </div>
               <div class="rounded-lg border border-slate-200 p-2.5 bg-white">
-                <span class="text-[11px] text-slate-500 block">Suggested action</span>
-                <span class="text-slate-800 text-[11px] mt-0.5 block leading-normal">
-                  {{ r.ai_suggested_action }}
+                <span class="text-[13px] text-slate-500 block">Suggested action</span>
+                <span class="text-slate-800 text-[13px] mt-0.5 block leading-normal">
+                  {{ formatTextDates(r.ai_suggested_action) }}
                 </span>
               </div>
             </div>
 
-            <div class="flex flex-wrap gap-3 text-[11px] text-slate-500 pt-0.5">
+            <div class="flex flex-wrap gap-3 text-[13px] text-slate-500 pt-0.5">
               <span v-if="r.ai_extracted_date" class="rounded px-1.5 py-0.5 font-medium bg-purple-50 text-purple-700">
                 Proposed date: {{ formatDate(r.ai_extracted_date) }}
               </span>
@@ -555,8 +573,8 @@ function keepResponseOnHold() {
     <!-- Section 3: Exceptions -->
     <section v-if="tab === 'all' || tab === 'exceptions'" class="space-y-3">
       <div class="flex items-center justify-between">
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Exceptions</h2>
-        <span class="text-[11px] text-slate-500">{{ currentBusiness?.name }}</span>
+        <h2 class="text-base font-semibold text-slate-900">Exceptions</h2>
+        <span class="text-[13px] text-slate-500">{{ currentBusiness?.name }}</span>
       </div>
 
       <p v-if="!exceptions.length" class="card p-6 text-center text-xs text-slate-400">
@@ -578,7 +596,7 @@ function keepResponseOnHold() {
               </span>
             </div>
             <p class="text-xs text-slate-500 mt-0.5 leading-normal">{{ e.reason }}</p>
-            <p class="text-[11px] text-slate-400 mt-1">Recommended: {{ e.action }}</p>
+            <p class="text-[13px] text-slate-400 mt-1">Recommended: {{ e.action }}</p>
           </div>
         </div>
 
@@ -590,21 +608,8 @@ function keepResponseOnHold() {
 
     <!-- Section 4: History -->
     <section v-if="tab === 'history'" class="card p-4 space-y-3">
-      <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Activity history ({{ currentBusiness?.name }})</h2>
-      <p v-if="!activity.length" class="empty-text">No activity recorded for this business.</p>
-      <div class="divide-y divide-slate-100">
-        <div
-          v-for="e in activity"
-          :key="e.id"
-          class="py-2.5 text-xs flex items-baseline justify-between gap-3"
-        >
-          <div class="min-w-0 flex-1">
-            <p class="text-slate-900 font-medium">{{ formatActivityText(e.description, data) }}</p>
-            <p class="text-[11px] text-slate-400 mt-0.5">{{ e.actor }} ({{ e.actor_role }})</p>
-          </div>
-          <span class="text-[11px] text-slate-400 shrink-0 tabular-nums">{{ formatDateTime(e.created_at) }}</span>
-        </div>
-      </div>
+      <h2 class="text-base font-semibold text-slate-900">Activity history</h2>
+      <ActivityTimeline :events="activity" empty-text="No activity recorded for this business." />
     </section>
 
     <!-- Invoice Detail Drawer -->

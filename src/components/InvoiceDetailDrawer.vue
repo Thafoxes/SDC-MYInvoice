@@ -5,18 +5,30 @@ import type { InvoiceWithCustomer } from '@/types';
 import BaseModal from '@/components/BaseModal.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
 import { useDemoStore } from '@/composables/useDemoStore';
-import { computeInvoiceWithCustomer, addActivity } from '@/lib/store';
+import { computeInvoiceWithCustomer } from '@/lib/store';
 import { recordPayment, resolveVerificationHold, resolveDispute, confirmPromise } from '@/lib/actions';
 import { formatMYR, formatDate, formatDateTime } from '@/lib/format';
 import {
   getDerivedLabelChips, formatCheckpoint, formatApprovalState, formatSendState,
-  formatAiCategory, formatReviewStatus, formatActivityText, formatOverdueDays,
+  formatAiCategory, formatReviewStatus, formatOverdueDays, formatTextDates,
 } from '@/lib/display';
+import { useToast } from '@/composables/useToast';
+import { useEscape } from '@/composables/useEscape';
+import ActivityTimeline from '@/components/ActivityTimeline.vue';
 
 const props = defineProps<{ invoice: InvoiceWithCustomer | null; open: boolean; sellerName: string; sellerRole: string }>();
 const emit = defineEmits<{ close: [] }>();
 
 const { data, refreshStore } = useDemoStore();
+const toast = useToast();
+
+// Escape closes the payment dialog first (BaseModal handles it), then the drawer.
+useEscape(() => { if (props.open && !payModal.value) emit('close'); });
+
+function report(r: { success: boolean; error?: string }, ok: string) {
+  if (r.success) toast.success(ok);
+  else toast.error(r.error || 'Action failed');
+}
 
 const current = computed(() => {
   if (!props.invoice) return null;
@@ -47,31 +59,24 @@ watch(() => props.open, (open) => {
 
 function reviewVerification(verified: boolean) {
   if (!current.value) return;
-  resolveVerificationHold(current.value.id, verified, props.sellerName, current.value.business_id);
-  addActivity(
-    current.value.business_id,
-    current.value.id,
-    'verification_reviewed',
-    props.sellerName,
-    props.sellerRole,
-    verified ? 'Seller confirmed verification review (does not itself record a payment)' : 'Seller could not verify payment'
-  );
+  const r = resolveVerificationHold(current.value.id, verified, props.sellerName, current.value.business_id);
+  report(r, verified ? 'Verification reviewed. The invoice stays unpaid until a payment is recorded.' : 'Marked as unverified; hold released for follow-up.');
   refreshStore();
-  emit('close');
 }
 
 function resolveDisputeAction() {
   if (!current.value) return;
-  resolveDispute(current.value.id, props.sellerName, current.value.business_id);
+  report(resolveDispute(current.value.id, props.sellerName, current.value.business_id), 'Dispute resolved');
   refreshStore();
-  emit('close');
 }
 
 function confirmPromiseAction(confirmed: boolean) {
   if (!current.value?.promise_to_pay_date) return;
-  confirmPromise(current.value.id, current.value.promise_to_pay_date, confirmed, props.sellerName, current.value.business_id);
+  report(
+    confirmPromise(current.value.id, current.value.promise_to_pay_date, confirmed, props.sellerName, current.value.business_id),
+    confirmed ? 'Promise confirmed' : 'Promise removed',
+  );
   refreshStore();
-  emit('close');
 }
 
 function savePayment() {
@@ -94,6 +99,7 @@ function savePayment() {
   reference.value = '';
   error.value = '';
   payModal.value = false;
+  toast.success(result.newStatus === 'paid' ? 'Payment recorded. Invoice fully settled; reminders stopped.' : 'Payment recorded');
   refreshStore();
 }
 </script>
@@ -101,11 +107,11 @@ function savePayment() {
 <template>
   <Teleport to="body">
     <div v-if="open && current" class="fixed inset-0 z-[55] bg-slate-900/40 backdrop-blur-sm" @click.self="emit('close')">
-      <aside class="absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto bg-white shadow-popover animate-slide-in-right border-l border-slate-200">
+      <aside role="dialog" aria-modal="true" aria-label="Invoice details" class="absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto bg-white shadow-popover animate-slide-in-right border-l border-slate-200">
         <!-- Header -->
         <div class="sticky top-0 z-10 flex items-center justify-between bg-white border-b border-slate-200 px-5 py-3.5">
           <div>
-            <h2 class="text-sm font-semibold text-slate-900">Invoice details</h2>
+            <h2 class="text-base font-semibold text-slate-900">Invoice details</h2>
             <p class="text-xs font-mono text-slate-500">{{ current.invoice_number }}</p>
           </div>
           <button
@@ -121,38 +127,38 @@ function savePayment() {
         <div class="p-5 space-y-5 text-xs">
           <!-- Information grid -->
           <section class="space-y-3">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Invoice information</h3>
+            <h3 class="text-xs font-semibold text-slate-900">Invoice information</h3>
             <div class="grid grid-cols-2 gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50/50">
               <div>
-                <p class="text-slate-400 text-[11px]">Invoice number</p>
+                <p class="text-slate-400 text-[13px]">Invoice number</p>
                 <p class="font-mono font-medium text-slate-900 mt-0.5">{{ current.invoice_number }}</p>
               </div>
               <div>
-                <p class="text-slate-400 text-[11px]">Customer</p>
+                <p class="text-slate-400 text-[13px]">Customer</p>
                 <p class="font-medium text-slate-900 mt-0.5">{{ current.customer?.name }}</p>
               </div>
               <div>
-                <p class="text-slate-400 text-[11px]">Invoice amount</p>
+                <p class="text-slate-400 text-[13px]">Invoice amount</p>
                 <p class="text-slate-900 tabular-nums mt-0.5">{{ formatMYR(current.invoice_amount) }}</p>
               </div>
               <div>
-                <p class="text-slate-400 text-[11px]">Outstanding balance</p>
+                <p class="text-slate-400 text-[13px]">Outstanding balance</p>
                 <p class="font-bold text-slate-900 tabular-nums mt-0.5">{{ formatMYR(current.outstanding_balance) }}</p>
               </div>
               <div>
-                <p class="text-slate-400 text-[11px]">Issue date</p>
+                <p class="text-slate-400 text-[13px]">Issue date</p>
                 <p class="text-slate-700 tabular-nums mt-0.5">{{ formatDate(current.issue_date) }}</p>
               </div>
               <div>
-                <p class="text-slate-400 text-[11px]">Due date</p>
+                <p class="text-slate-400 text-[13px]">Due date</p>
                 <p class="text-slate-700 tabular-nums mt-0.5">{{ formatDate(current.due_date) }}</p>
               </div>
               <div>
-                <p class="text-slate-400 text-[11px]">Total paid</p>
+                <p class="text-slate-400 text-[13px]">Total paid</p>
                 <p class="text-slate-700 tabular-nums mt-0.5">{{ formatMYR(current.total_paid) }}</p>
               </div>
               <div>
-                <p class="text-slate-400 text-[11px]">Status</p>
+                <p class="text-slate-400 text-[13px]">Status</p>
                 <div class="mt-0.5"><StatusBadge :status="current.status" /></div>
               </div>
             </div>
@@ -162,7 +168,7 @@ function savePayment() {
               <span
                 v-for="chip in getDerivedLabelChips(current)"
                 :key="chip.text"
-                class="rounded px-2 py-0.5 text-[11px] font-medium"
+                class="rounded px-2 py-0.5 text-[13px] font-medium"
                 :class="chip.className"
               >
                 {{ chip.text }}
@@ -199,63 +205,57 @@ function savePayment() {
 
           <!-- Payment history -->
           <section class="space-y-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Payment history</h3>
+            <h3 class="text-xs font-semibold text-slate-900">Payment history</h3>
             <p v-if="!payments.length" class="text-slate-400">No recorded payments.</p>
             <div class="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden bg-white">
               <div v-for="p in payments" :key="p.id" class="p-2.5 flex items-center justify-between">
                 <div>
                   <p class="font-semibold text-slate-900 tabular-nums">{{ formatMYR(p.amount) }}</p>
-                  <p class="text-[11px] text-slate-400 tabular-nums">{{ formatDate(p.payment_date) }} · {{ p.method }} · {{ p.reference }}</p>
+                  <p class="text-[13px] text-slate-400 tabular-nums">{{ formatDate(p.payment_date) }} · {{ p.method }} · {{ p.reference }}</p>
                 </div>
-                <span v-if="p.verification_status === 'flagged'" class="text-[11px] text-rose-600 font-medium">Flagged</span>
+                <span v-if="p.verification_status === 'flagged'" class="text-[13px] text-rose-600 font-medium">Flagged</span>
               </div>
             </div>
           </section>
 
           <!-- Reminder history -->
           <section class="space-y-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Reminder history</h3>
+            <h3 class="text-xs font-semibold text-slate-900">Reminder history</h3>
             <p v-if="!followups.length" class="text-slate-400">No reminders generated yet.</p>
             <div class="space-y-2">
               <div v-for="f in followups" :key="f.id" class="rounded-lg border border-slate-200 p-2.5 space-y-1 bg-white">
                 <div class="flex items-center justify-between">
                   <span class="font-medium text-slate-900">{{ formatCheckpoint(f.checkpoint) }}</span>
-                  <span class="text-[11px] text-slate-500">
+                  <span class="text-[13px] text-slate-500">
                     {{ formatApprovalState(f.approval_state) }} / {{ formatSendState(f.send_state) }}
                   </span>
                 </div>
-                <p class="text-[11px] text-slate-500">{{ f.reason }}</p>
-                <p class="rounded border border-slate-100 bg-slate-50 p-2 text-[11px] text-slate-700 leading-normal">{{ f.message }}</p>
-                <p v-if="f.sent_at" class="text-[10px] text-slate-400 tabular-nums">Recorded {{ formatDateTime(f.sent_at) }} (simulated)</p>
+                <p class="text-[13px] text-slate-500">{{ f.reason }}</p>
+                <p class="rounded border border-slate-100 bg-slate-50 p-2 text-[13px] text-slate-700 leading-normal">{{ f.message }}</p>
+                <p v-if="f.sent_at" class="text-[12px] text-slate-400 tabular-nums">Recorded {{ formatDateTime(f.sent_at) }} (simulated)</p>
               </div>
             </div>
           </section>
 
           <!-- Customer responses -->
           <section class="space-y-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Customer responses</h3>
+            <h3 class="text-xs font-semibold text-slate-900">Customer responses</h3>
             <p v-if="!responses.length" class="text-slate-400">No customer responses.</p>
             <div class="space-y-2">
               <div v-for="r in responses" :key="r.id" class="rounded-lg border border-slate-200 p-2.5 space-y-1 bg-white">
                 <p class="italic text-slate-800">“{{ r.message }}”</p>
-                <p class="text-[11px] text-slate-500">
+                <p class="text-[13px] text-slate-500">
                   <span class="font-medium text-slate-800">{{ formatAiCategory(r.ai_category) }}</span> · {{ formatReviewStatus(r.review_status) }}
                 </p>
-                <p class="text-[11px] text-slate-600">{{ r.ai_suggested_action }}</p>
+                <p class="text-[13px] text-slate-600">{{ formatTextDates(r.ai_suggested_action) }}</p>
               </div>
             </div>
           </section>
 
           <!-- Activity timeline -->
           <section class="space-y-2">
-            <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">Activity timeline</h3>
-            <p v-if="!activity.length" class="text-slate-400">No activity recorded.</p>
-            <div class="space-y-1.5 border-l-2 border-slate-200 pl-3 ml-1">
-              <div v-for="e in activity" :key="e.id" class="py-1">
-                <p class="text-slate-900 font-medium">{{ formatActivityText(e.description, data) }}</p>
-                <p class="text-[10px] text-slate-400 tabular-nums mt-0.5">{{ formatDateTime(e.created_at) }} · {{ e.actor }}</p>
-              </div>
-            </div>
+            <h3 class="text-xs font-semibold text-slate-900">Activity timeline</h3>
+            <ActivityTimeline :events="activity" />
           </section>
         </div>
       </aside>
