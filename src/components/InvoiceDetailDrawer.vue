@@ -8,7 +8,10 @@ import { useDemoStore } from '@/composables/useDemoStore';
 import { computeInvoiceWithCustomer, addActivity } from '@/lib/store';
 import { recordPayment, resolveVerificationHold, resolveDispute, confirmPromise } from '@/lib/actions';
 import { formatMYR, formatDate, formatDateTime } from '@/lib/format';
-import { getDerivedLabelChips, formatCheckpoint, formatApprovalState, formatSendState } from '@/lib/display';
+import {
+  getDerivedLabelChips, formatCheckpoint, formatApprovalState, formatSendState,
+  formatAiCategory, formatReviewStatus, formatActivityText,
+} from '@/lib/display';
 
 const props = defineProps<{ invoice: InvoiceWithCustomer | null; open: boolean; sellerName: string; sellerRole: string }>();
 const emit = defineEmits<{ close: [] }>();
@@ -187,7 +190,9 @@ function savePayment() {
             <p v-if="!responses.length" class="empty-text">No customer responses.</p>
             <div v-for="r in responses" :key="r.id" class="detail-row block">
               <p class="text-sm italic">“{{ r.message }}”</p>
-              <p class="text-xs text-orbyte-muted capitalize mt-2">{{ r.ai_category?.replace(/_/g, ' ') }} · {{ r.review_status }}</p>
+              <p class="text-xs text-orbyte-muted mt-2">
+                <span class="font-medium text-orbyte-ink">{{ formatAiCategory(r.ai_category) }}</span> · {{ formatReviewStatus(r.review_status) }}
+              </p>
               <p class="text-xs mt-1">{{ r.ai_suggested_action }}</p>
             </div>
           </section>
@@ -196,7 +201,7 @@ function savePayment() {
             <h4 class="section-title"><Activity class="w-4 h-4 text-orbyte-blue" />Activity Timeline</h4>
             <p v-if="!activity.length" class="empty-text">No activity recorded.</p>
             <div v-for="e in activity" :key="e.id" class="relative border-l-2 border-orbyte-border pl-4 py-2 ml-1">
-              <p class="text-sm">{{ e.description }}</p>
+              <p class="text-sm">{{ formatActivityText(e.description, data) }}</p>
               <p class="text-xs text-orbyte-muted mt-1">{{ formatDateTime(e.created_at) }} · {{ e.actor }}</p>
             </div>
           </section>

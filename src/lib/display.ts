@@ -1,4 +1,4 @@
-import type { Invoice, InvoiceWithCustomer, FollowUpAction } from '@/types';
+import type { Invoice, InvoiceWithCustomer, FollowUpAction, CustomerResponse } from '@/types';
 
 export interface DerivedLabel {
   text: string;
@@ -111,15 +111,59 @@ export function formatDeliveryStatus(status: string | null): string {
   }
 }
 
-/** Human-readable text for AI classification categories */
-export function formatAiCategory(category: string | null): string {
+/**
+ * Human-readable text for AI classification categories:
+ * - payment_already_made_claim → "Claims already paid"
+ * - payment_promise → "Payment promise"
+ * - payment_promise_or_extension_request → "Asks for more time"
+ * - invoice_dispute → "Dispute"
+ * - general_response → "General reply"
+ * - unclear_requires_review → "Unclear – needs review"
+ */
+export function formatAiCategory(category: string | null | undefined): string {
   if (!category) return '—';
   switch (category) {
-    case 'payment_already_made_claim': return 'Payment already made claim';
+    case 'payment_already_made_claim': return 'Claims already paid';
     case 'payment_promise': return 'Payment promise';
-    case 'payment_promise_or_extension_request': return 'Payment promise / extension request';
-    case 'invoice_dispute': return 'Invoice dispute';
-    case 'unrelated_or_unclear': return 'Unclear / unrelated';
+    case 'payment_promise_or_extension_request': return 'Asks for more time';
+    case 'invoice_dispute': return 'Dispute';
+    case 'general_response': return 'General reply';
+    case 'unclear_requires_review': return 'Unclear – needs review';
     default: return category.replace(/_/g, ' ');
   }
+}
+
+/**
+ * Human-readable text for customer response review status:
+ * - pending → "Needs review"
+ * - reviewed → "Reviewed"
+ * - resolved → "Resolved"
+ */
+export function formatReviewStatus(status: CustomerResponse['review_status'] | string | null | undefined): string {
+  if (!status) return '—';
+  switch (status) {
+    case 'pending': return 'Needs review';
+    case 'reviewed': return 'Reviewed';
+    case 'resolved': return 'Resolved';
+    default: return status;
+  }
+}
+
+/**
+ * Replaces any follow-up id (pattern fu-[a-z0-9]+) with the related invoice number,
+ * e.g. "Reminder for INV-1006".
+ */
+export function formatActivityText(
+  description: string | null,
+  data?: { followUpActions: FollowUpAction[]; invoices: Invoice[] }
+): string {
+  if (!description) return '';
+  if (!data) return description;
+  return description.replace(/(?:Reminder\s+)?(fu-[a-z0-9]+)/gi, (match, fuId) => {
+    const fu = data.followUpActions.find(f => f.id === fuId);
+    if (!fu) return match;
+    const inv = data.invoices.find(i => i.id === fu.invoice_id);
+    if (!inv) return match;
+    return `Reminder for ${inv.invoice_number}`;
+  });
 }

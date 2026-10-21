@@ -103,9 +103,9 @@ function getSeedData(): StoreData {
   // Additional SETTLED histories for priority-rule testing (synthetic only).
   // Green: 5/5 settled on time. Yellow: 2/5 settled late. No actual customer data.
   customers.push(
-    { id: 'cust-green', business_id: businessId, name: 'Demo: Consistent Payer', phone: null, telegram_chat_id: null, email: null },
-    { id: 'cust-yellow', business_id: businessId, name: 'Demo: Repeated Late Payments', phone: null, telegram_chat_id: null, email: null },
-    { id: 'cust-grey', business_id: businessId, name: 'Demo: New Customer', phone: null, telegram_chat_id: null, email: null },
+    { id: 'cust-green', business_id: businessId, name: 'Kopitiam Ah Seng', phone: null, telegram_chat_id: null, email: null },
+    { id: 'cust-yellow', business_id: businessId, name: 'Bengkel Motor Zainal', phone: null, telegram_chat_id: null, email: null },
+    { id: 'cust-grey', business_id: businessId, name: 'Butik Nur Ain', phone: null, telegram_chat_id: null, email: null },
   );
   for (let k = 1; k <= 5; k++) {
     for (const [kind, cid] of [['green','cust-green'],['yellow','cust-yellow']] as const) {

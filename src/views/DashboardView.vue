@@ -249,7 +249,7 @@ function openInvoice(i: InvoiceWithCustomer) {
           <h3 class="font-semibold">Customer Follow-Up Priorities <span class="ml-2 rounded-md bg-blue-50 text-blue-700 px-2 py-0.5 text-xs">v1.1 rules</span></h3>
           <p class="text-xs text-orbyte-muted mt-1">Explainable, internal operational priorities — not credit scores. Does not override reminder approval.</p>
         </div>
-        <p class="text-xs text-orbyte-muted">As of {{ today }} · MYT demo clock</p>
+        <p class="text-xs text-orbyte-muted">As of {{ formatDate(today) }} · MYT demo clock</p>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 border-b border-orbyte-border">
         <div v-for="l in ['red', 'yellow', 'green', 'grey']" :key="l" class="rounded-xl bg-orbyte-bg/40 border border-orbyte-border px-3 py-2">
@@ -284,9 +284,9 @@ function openInvoice(i: InvoiceWithCustomer) {
                 <td colspan="5" class="px-5 py-4 text-xs space-y-2">
                   <p><strong>Evidence invoice numbers:</strong> {{ priorityInvoiceRefs(p) }}</p>
                   <p><strong>Last 5 eligible settled:</strong> {{ p.settledCount }} · <strong>Paid late:</strong> {{ p.lateCount }}</p>
-                  <p v-for="x in p.lastFiveSettled" :key="x.invoiceId" class="text-orbyte-muted">{{ x.invoiceNumber }}: due {{ x.dueDate }}, settled {{ x.settledDate }} — {{ x.late ? `Late (${x.daysLate}d)` : 'On time' }}</p>
+                  <p v-for="x in p.lastFiveSettled" :key="x.invoiceId" class="text-orbyte-muted">{{ x.invoiceNumber }}: due {{ formatDate(x.dueDate) }}, settled {{ formatDate(x.settledDate) }} — {{ x.late ? `Late (${x.daysLate}d)` : 'On time' }}</p>
                   <p v-for="flag in p.reviewFlags" :key="flag" class="text-amber-800">⚠ {{ flag }}</p>
-                  <p class="text-orbyte-muted">Calculation: {{ p.calculatedAt }} · Rule version {{ p.ruleVersion }} · Simulated records only</p>
+                  <p class="text-orbyte-muted">Calculation: {{ formatDate(p.calculatedAt) }} · Rule version {{ p.ruleVersion }} · Simulated records only</p>
                 </td>
               </tr>
             </template>

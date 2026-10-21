@@ -8,6 +8,7 @@ import { setDemoDate, resetStore, computeInvoiceWithCustomer } from '@/lib/store
 import { runInvoiceCheck } from '@/lib/reminderEngine';
 import { simulateCustomerResponse, recordPayment } from '@/lib/actions';
 import { formatMYR } from '@/lib/format';
+import { formatAiCategory } from '@/lib/display';
 
 const props = defineProps<{ sellerName: string }>();
 const { data, refreshStore } = useDemoStore();
@@ -75,7 +76,7 @@ function saveResponse() {
     showResponse.value = false;
     responseText.value = '';
     refreshStore();
-    toast(`Response classified: ${r.classification?.category.replace(/_/g, ' ')}`);
+    toast(`Response classified: ${formatAiCategory(r.classification?.category)}`);
   } else {
     toast(r.error || 'Error');
   }

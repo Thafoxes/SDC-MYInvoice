@@ -11,7 +11,7 @@ import {
 import { formatMYR, formatDate, formatDateTime, daysOverdue } from '@/lib/format';
 import {
   formatCheckpoint, formatApprovalState, formatSendState,
-  formatDeliveryStatus, formatAiCategory,
+  formatDeliveryStatus, formatAiCategory, formatReviewStatus, formatActivityText,
 } from '@/lib/display';
 import type { FollowUpAction, InvoiceWithCustomer } from '@/types';
 import BaseModal from '@/components/BaseModal.vue';
@@ -391,7 +391,7 @@ function keepResponseOnHold() {
               <span v-if="r.ai_extracted_date" class="font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
                 Proposed promise date: {{ formatDate(r.ai_extracted_date) }}
               </span>
-              <span class="capitalize">Review status: <strong>{{ r.review_status }}</strong></span>
+              <span>Review status: <strong>{{ formatReviewStatus(r.review_status) }}</strong></span>
               <span>Received: {{ formatDateTime(r.created_at) }}</span>
             </div>
           </div>
@@ -497,7 +497,7 @@ function keepResponseOnHold() {
         class="border-l-2 pl-4 py-2"
         :class="k === 0 ? 'border-orbyte-blue' : 'border-orbyte-border'"
       >
-        <p class="text-sm text-orbyte-ink">{{ e.description }}</p>
+        <p class="text-sm text-orbyte-ink">{{ formatActivityText(e.description, data) }}</p>
         <p class="text-xs text-orbyte-muted mt-1">{{ formatDateTime(e.created_at) }} · {{ e.actor }} ({{ e.actor_role }})</p>
       </div>
     </section>
