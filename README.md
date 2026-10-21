@@ -11,7 +11,7 @@
 | --- | --- |
 | Team name | YOLO |
 | Hackathon domain | Domain 2 — Orbyte Smart SME Challenge |
-| SDG focus | SDG 8 — Decent Work and Economic Growth (targets 8.2 and 8.3) |
+| SDG focus | SDG 8 — Decent Work and Economic Growth |
 | Team leader | WONG JIA SOON |
 | University | To be confirmed by the team |
 | Team members | To be confirmed by the team |
