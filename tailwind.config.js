@@ -4,29 +4,30 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
       colors: {
         orbyte: {
-          bg: '#E8F6FE',
-          sidebar: '#EAF5FF',
+          bg: '#F8FAFC',
+          sidebar: '#FFFFFF',
           card: '#FFFFFF',
-          blue: '#4096EE',
-          button: '#1D72E0',
-          ink: '#162A50',
-          muted: '#64748B',
-          border: '#D6E7F5',
+          blue: '#1D4ED8',
+          button: '#1D4ED8',
+          ink: '#0F172A',
+          muted: '#475569',
+          border: '#E2E8F0',
           paid: '#16A34A',
-          pending: '#F59E0B',
-          overdue: '#EF4444',
+          pending: '#D97706',
+          overdue: '#DC2626',
         },
       },
       boxShadow: {
-        card: '0 1px 3px rgba(22,42,80,0.06), 0 1px 2px rgba(22,42,80,0.04)',
-        cardhover: '0 6px 18px rgba(22,42,80,0.10)',
+        card: '0 1px 2px 0 rgba(15, 23, 42, 0.04)',
+        popover: '0 4px 16px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -2px rgba(15, 23, 42, 0.04)',
       },
       borderRadius: {
-        xl2: '1rem',
+        DEFAULT: '8px',
+        card: '8px',
       },
     },
   },

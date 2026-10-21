@@ -1,4 +1,5 @@
 import type { Invoice, InvoiceWithCustomer, FollowUpAction, CustomerResponse } from '@/types';
+import type { CustomerPriority } from './priorityEngine';
 
 export interface DerivedLabel {
   text: string;
@@ -45,15 +46,15 @@ export function getDerivedLabelChips(inv: Invoice | InvoiceWithCustomer): Derive
   return raw.map(text => {
     switch (text) {
       case 'Partially paid':
-        return { text, className: 'bg-blue-50 text-blue-700 border border-blue-200' };
+        return { text, className: 'bg-blue-50 text-blue-700' };
       case 'Disputed':
-        return { text, className: 'bg-red-50 text-red-700 border border-red-200' };
+        return { text, className: 'bg-rose-50 text-rose-700' };
       case 'Awaiting payment verification':
-        return { text, className: 'bg-amber-50 text-amber-700 border border-amber-200' };
+        return { text, className: 'bg-amber-50 text-amber-700' };
       case 'Promise to pay':
-        return { text, className: 'bg-purple-50 text-purple-700 border border-purple-200' };
+        return { text, className: 'bg-purple-50 text-purple-700' };
       default:
-        return { text, className: 'bg-orbyte-bg text-orbyte-muted border border-orbyte-border' };
+        return { text, className: 'bg-slate-100 text-slate-700' };
     }
   });
 }
@@ -166,4 +167,61 @@ export function formatActivityText(
     if (!inv) return match;
     return `Reminder for ${inv.invoice_number}`;
   });
+}
+
+/**
+ * Shorten priority reasons for concise enterprise display and fix "(s)" plurals.
+ * E.g.: "INV-1008 · 14 days overdue", "Missed promise · INV-1016"
+ */
+export function formatShortPriorityReason(
+  p: CustomerPriority,
+  invoices?: (Invoice | InvoiceWithCustomer)[]
+): string {
+  // If missed payment promise
+  if (p.reason.toLowerCase().includes('missed')) {
+    const match = p.reason.match(/INV-\d+/);
+    if (match) return `Missed promise · ${match[0]}`;
+    if (p.supportingInvoiceIds.length && invoices) {
+      const inv = invoices.find(i => i.id === p.supportingInvoiceIds[0]);
+      if (inv) return `Missed promise · ${inv.invoice_number}`;
+    }
+    return 'Missed payment promise';
+  }
+
+  // If overdue with supporting invoices
+  if (invoices && p.supportingInvoiceIds.length > 0) {
+    const inv = invoices.find(i => i.id === p.supportingInvoiceIds[0]);
+    if (inv && 'days_overdue' in inv && (inv as InvoiceWithCustomer).days_overdue > 0) {
+      const d = (inv as InvoiceWithCustomer).days_overdue;
+      return `${inv.invoice_number} · ${d} ${d === 1 ? 'day' : 'days'} overdue`;
+    }
+  }
+
+  // Pluralization and template cleanups
+  let clean = p.reason
+    .replace(/1 invoice\(s\)/g, '1 invoice')
+    .replace(/(\d+) invoice\(s\)/g, '$1 invoices')
+    .replace(/1 day\(s\)/g, '1 day')
+    .replace(/(\d+) day\(s\)/g, '$1 days')
+    .replace(/1 days/g, '1 day');
+
+  if (clean.includes('5 required for history-based classification')) {
+    return `${p.settledCount}/5 settled invoices recorded`;
+  }
+  if (clean.includes('were paid late')) {
+    return `${p.lateCount} of last 5 invoices paid late`;
+  }
+  if (clean.includes('no undisputed overdue balance')) {
+    return 'Consistent on-time settlement';
+  }
+
+  return clean;
+}
+
+/**
+ * Format duration helper fixing "1 days" -> "1 day"
+ */
+export function formatOverdueDays(days: number): string {
+  if (days <= 0) return 'Not overdue';
+  return `${days} ${days === 1 ? 'day' : 'days'} overdue`;
 }

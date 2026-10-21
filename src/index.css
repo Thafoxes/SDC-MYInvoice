@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 html, body, #app {
@@ -12,42 +12,63 @@ html, body, #app {
 
 body {
   margin: 0;
-  background-color: #E8F6FE;
-  color: #162A50;
+  background-color: #F8FAFC;
+  color: #0F172A;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 * {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-/* Subtle scrollbar */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #C9DFF3; border-radius: 9999px; }
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Crisp subtle scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 9999px; }
 ::-webkit-scrollbar-track { background: transparent; }
-
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-in-up { animation: fadeInUp 0.3s ease-out both; }
 
 @keyframes slideInRight {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
 }
-.animate-slide-in-right { animation: slideInRight 0.28s cubic-bezier(0.22,1,0.36,1) both; }
+.animate-slide-in-right { animation: slideInRight 0.24s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
 @layer components {
- .primary-btn { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-orbyte-button px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition; }
- .outline-btn { @apply inline-flex items-center justify-center gap-2 rounded-lg border border-orbyte-border bg-white px-3 py-2 text-sm font-medium text-orbyte-ink hover:bg-orbyte-bg transition; }
- .success-btn { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 transition; }
- .danger-btn { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 transition; }
- .card { @apply rounded-2xl border border-orbyte-border bg-white shadow-card; }
- .section-title { @apply mb-3 flex items-center gap-2 text-sm font-semibold text-orbyte-ink; }
- .info-label { @apply text-xs text-orbyte-muted mb-0.5; }
- .detail-row { @apply flex items-center justify-between rounded-lg border border-orbyte-border px-3 py-3 text-sm mb-2; }
- .empty-text { @apply text-sm text-orbyte-muted py-3; }
- .form-label { @apply block text-sm font-medium text-orbyte-ink; }
- .form-input { @apply mt-1 block w-full rounded-lg border border-orbyte-border px-3 py-2 text-sm focus:border-orbyte-blue focus:outline-none focus:ring-2 focus:ring-orbyte-blue/20; }
+  .primary-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg bg-orbyte-button px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition shadow-sm;
+  }
+  .outline-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-orbyte-border bg-white px-3 py-1.5 text-xs font-medium text-orbyte-ink hover:bg-slate-50 active:bg-slate-100 disabled:opacity-50 transition;
+  }
+  .success-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 transition shadow-sm;
+  }
+  .danger-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg bg-white border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 active:bg-red-100 disabled:opacity-50 transition;
+  }
+  .card {
+    @apply rounded-lg border border-orbyte-border bg-white shadow-card;
+  }
+  .section-title {
+    @apply mb-3 flex items-center gap-2 text-xs font-semibold text-orbyte-ink uppercase tracking-wider text-slate-500;
+  }
+  .info-label {
+    @apply text-[11px] font-medium text-orbyte-muted mb-0.5;
+  }
+  .detail-row {
+    @apply flex items-center justify-between rounded-lg border border-orbyte-border px-3 py-2.5 text-xs mb-2 bg-slate-50/50;
+  }
+  .empty-text {
+    @apply text-xs text-orbyte-muted py-3;
+  }
+  .form-label {
+    @apply block text-xs font-medium text-orbyte-ink;
+  }
+  .form-input {
+    @apply mt-1 block w-full rounded-lg border border-orbyte-border bg-white px-3 py-1.5 text-xs text-orbyte-ink shadow-sm focus:border-orbyte-blue focus:outline-none focus:ring-1 focus:ring-orbyte-blue;
+  }
 }

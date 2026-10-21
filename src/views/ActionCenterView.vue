@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { AlertTriangle, Eye, Check, Pencil, X, Send, ShieldCheck, PauseCircle, AlertCircle } from 'lucide-vue-next';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
+import { AlertTriangle, Check, Send, AlertCircle, MoreHorizontal } from 'lucide-vue-next';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { useCurrentUser } from '@/composables/useCurrentUser';
 import { computeInvoiceWithCustomer, updateCustomerResponse } from '@/lib/store';
@@ -12,6 +12,7 @@ import { formatMYR, formatDate, formatDateTime, daysOverdue } from '@/lib/format
 import {
   formatCheckpoint, formatApprovalState, formatSendState,
   formatDeliveryStatus, formatAiCategory, formatReviewStatus, formatActivityText,
+  formatOverdueDays,
 } from '@/lib/display';
 import type { FollowUpAction, InvoiceWithCustomer } from '@/types';
 import BaseModal from '@/components/BaseModal.vue';
@@ -46,20 +47,19 @@ const responses = computed(() =>
 const exceptions = computed(() => {
   const result: { invoice: InvoiceWithCustomer; title: string; reason: string; action: string }[] = [];
 
-  // 1. Regular exceptions from invoice flags
   for (const i of invoices.value) {
     if (i.dispute_active) {
       result.push({
         invoice: i,
-        title: 'Invoice Dispute',
-        reason: 'Customer has disputed this invoice; reminders are paused.',
+        title: 'Invoice dispute',
+        reason: 'Customer has disputed this invoice; automatic reminders are paused.',
         action: 'Investigate dispute',
       });
     }
     if (i.verification_hold) {
       result.push({
         invoice: i,
-        title: 'Payment Verification Pending',
+        title: 'Payment verification pending',
         reason: 'Customer claims payment has been made, but it is not verified.',
         action: 'Verify recorded payment',
       });
@@ -67,14 +67,13 @@ const exceptions = computed(() => {
     if (i.promise_confirmed && i.promise_to_pay_date && daysOverdue(i.promise_to_pay_date, data.value.demoState.simulated_date) > 0 && i.outstanding_balance > 0) {
       result.push({
         invoice: i,
-        title: 'Missed Payment Promise',
+        title: 'Missed payment promise',
         reason: `Promised payment by ${formatDate(i.promise_to_pay_date)} was not recorded.`,
         action: 'Contact seller for review',
       });
     }
   }
 
-  // 2. 21+ day escalations (checkpoint 5 with delivery_status 'seller_decision_required' on unpaid invoices)
   const escalations = data.value.followUpActions.filter(
     f => f.business_id === currentUser.value.business_id &&
          f.checkpoint === 5 &&
@@ -104,10 +103,10 @@ const activity = computed(() =>
 const tab = ref<'all' | 'approval' | 'responses' | 'exceptions' | 'history'>('all');
 const tabs = computed(() => [
   { id: 'all', label: 'All', count: 0 },
-  { id: 'approval', label: 'Awaiting Approval', count: followUps.value.filter(f => f.approval_state === 'pending').length },
-  { id: 'responses', label: 'Customer Responses', count: responses.value.filter(r => r.review_status === 'pending').length },
+  { id: 'approval', label: 'Awaiting approval', count: followUps.value.filter(f => f.approval_state === 'pending').length },
+  { id: 'responses', label: 'Customer responses', count: responses.value.filter(r => r.review_status === 'pending').length },
   { id: 'exceptions', label: 'Exceptions', count: exceptions.value.length },
-  { id: 'history', label: 'History', count: 0 },
+  { id: 'history', label: 'Activity history', count: 0 },
 ] as const);
 
 const selectedId = ref<string | null>(null);
@@ -118,9 +117,25 @@ const editError = ref('');
 const toast = ref('');
 const toastIsError = ref(false);
 
+// Active "⋯" more options menu id
+const activeMenuId = ref<string | null>(null);
+
+function toggleMenu(id: string) {
+  activeMenuId.value = activeMenuId.value === id ? null : id;
+}
+
+function closeMenu() {
+  activeMenuId.value = null;
+}
+
+const onGlobalClick = () => closeMenu();
+onMounted(() => window.addEventListener('click', onGlobalClick));
+onUnmounted(() => window.removeEventListener('click', onGlobalClick));
+
 const selected = computed(() => invoices.value.find(i => i.id === selectedId.value) ?? null);
 
 function openInvoice(i: InvoiceWithCustomer) {
+  closeMenu();
   selectedId.value = i.id;
   drawerOpen.value = true;
 }
@@ -137,11 +152,11 @@ function notice(msg: string, isError = false) {
 }
 
 function execute(fn: () => { success: boolean; error?: string }, ok: string) {
+  closeMenu();
   const r = fn();
   if (r.success) {
     notice(ok, false);
   } else {
-    // If staff attempted seller action, show clear staff notice as requested
     if (currentUser.value.role === 'staff') {
       notice('Staff can prepare drafts but cannot approve reminders', true);
     } else {
@@ -168,11 +183,12 @@ function handleReject(f: FollowUpAction) {
 function handleSend(f: FollowUpAction) {
   execute(
     () => sendApprovedFollowUp(f.id, currentUser.value.name, currentUser.value.business_id),
-    'Message sent (simulated only)'
+    'Message recorded (simulated send)'
   );
 }
 
 function beginEdit(f: FollowUpAction) {
+  closeMenu();
   editId.value = f.id;
   editText.value = f.message;
   editError.value = '';
@@ -193,7 +209,7 @@ function saveEdit() {
   );
   if (result.success) {
     editId.value = null;
-    notice('Reminder saved; approval reset.', false);
+    notice('Reminder saved; previous approval reset.', false);
   } else {
     editError.value = result.error || 'Could not edit';
   }
@@ -201,44 +217,45 @@ function saveEdit() {
 }
 
 function reviewResponse(id: string) {
+  closeMenu();
   updateCustomerResponse(id, { review_status: 'reviewed' });
   notice('Response marked as reviewed', false);
   refreshStore();
 }
 
 function keepResponseOnHold() {
-  // Leaves review_status 'pending' and only shows a toast
+  closeMenu();
   notice('Response kept on hold for later follow-up', false);
 }
 </script>
 
 <template>
-  <div class="space-y-5">
+  <div class="space-y-4">
     <!-- Feedback Toast -->
     <div
       v-if="toast"
       role="status"
-      class="fixed right-5 top-20 z-50 rounded-xl p-3 text-sm text-white shadow-xl flex items-center gap-2"
-      :class="toastIsError ? 'bg-red-600 border border-red-700' : 'bg-orbyte-ink'"
+      class="fixed right-5 top-16 z-50 rounded-lg p-3 text-xs text-white shadow-popover flex items-center gap-2"
+      :class="toastIsError ? 'bg-red-600' : 'bg-slate-900'"
     >
       <AlertCircle v-if="toastIsError" class="w-4 h-4 shrink-0" />
       <span>{{ toast }}</span>
     </div>
 
     <!-- Tabs Header -->
-    <div class="card flex flex-wrap gap-1.5 p-1.5">
+    <div class="flex flex-wrap gap-1 p-1 border-b border-slate-200">
       <button
         v-for="t in tabs"
         :key="t.id"
         @click="tab = t.id"
-        class="rounded-lg px-3.5 py-2 text-sm font-medium transition"
-        :class="tab === t.id ? 'bg-orbyte-button text-white shadow-sm' : 'text-orbyte-muted hover:bg-orbyte-bg'"
+        class="rounded-lg px-3 py-1.5 text-xs font-medium transition"
+        :class="tab === t.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'"
       >
         {{ t.label }}
         <span
           v-if="t.count"
-          class="ml-1 rounded-full px-1.5 text-[10px]"
-          :class="tab === t.id ? 'bg-white/20' : 'bg-orbyte-bg'"
+          class="ml-1 rounded px-1.5 py-0.2 text-[10px] tabular-nums"
+          :class="tab === t.id ? 'bg-white/20' : 'bg-slate-100 text-slate-700'"
         >
           {{ t.count }}
         </span>
@@ -248,104 +265,129 @@ function keepResponseOnHold() {
     <!-- Section 1: Reminder Approvals -->
     <section v-if="tab === 'all' || tab === 'approval'" class="space-y-3">
       <div class="flex items-center justify-between">
-        <h3 class="text-sm font-semibold">Reminder Approvals</h3>
-        <span class="text-xs text-orbyte-muted">{{ currentBusiness?.name }}</span>
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Reminder approvals</h2>
+        <span class="text-[11px] text-slate-500">{{ currentBusiness?.name }}</span>
       </div>
-      <p v-if="!followUps.length" class="card p-6 text-sm text-orbyte-muted">
-        No reminders yet for {{ currentBusiness?.name }}. Use Demo Controls → Run Invoice Check to create drafts.
+
+      <p v-if="!followUps.length" class="card p-6 text-center text-xs text-slate-400">
+        No reminders currently awaiting approval for {{ currentBusiness?.name }}.
       </p>
 
-      <!-- Approval Cards (spec section 7: customer, exact recipient, invoice number, outstanding amount, due date, overdue duration, reason, exact message) -->
-      <div v-for="f in followUps" :key="f.id" class="card p-5">
-        <div class="flex flex-col gap-4 lg:flex-row lg:justify-between">
-          <div class="space-y-3 flex-1">
-            <!-- Header: Customer, Invoice Number, Status Badge -->
+      <!-- Approval Cards with 1 primary button + ⋯ menu -->
+      <div v-for="f in followUps" :key="f.id" class="card p-4 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <!-- Main details -->
+          <div class="space-y-2 flex-1 min-w-0">
             <div class="flex flex-wrap items-center gap-2">
-              <h4 class="font-semibold text-base">{{ f.customer?.name || '—' }}</h4>
-              <span class="text-sm font-mono text-orbyte-muted font-medium">{{ f.invoice?.invoice_number }}</span>
+              <h3 class="font-semibold text-xs text-slate-900">{{ f.customer?.name || '—' }}</h3>
+              <span class="font-mono text-xs text-slate-500 font-medium">{{ f.invoice?.invoice_number }}</span>
               <StatusBadge v-if="f.invoice" :status="f.invoice.status" />
             </div>
 
-            <!-- Metadata row (spec section 7) -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs bg-orbyte-bg/40 p-3 rounded-xl border border-orbyte-border">
+            <!-- Key metadata -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-600 py-1 tabular-nums">
               <div>
-                <p class="text-orbyte-muted">Exact Recipient</p>
-                <p class="font-medium text-orbyte-ink mt-0.5">{{ f.recipient || f.customer?.phone || 'No phone recorded' }}</p>
+                <span class="text-slate-400 block text-[11px]">Recipient</span>
+                <span class="font-medium text-slate-800">{{ f.recipient || f.customer?.phone || 'No phone recorded' }}</span>
               </div>
               <div>
-                <p class="text-orbyte-muted">Outstanding Amount</p>
-                <p class="font-bold text-orbyte-ink mt-0.5">{{ formatMYR(f.invoice?.outstanding_balance || 0) }}</p>
+                <span class="text-slate-400 block text-[11px]">Outstanding</span>
+                <span class="font-semibold text-slate-900">{{ formatMYR(f.invoice?.outstanding_balance || 0) }}</span>
               </div>
               <div>
-                <p class="text-orbyte-muted">Due Date</p>
-                <p class="font-medium text-orbyte-ink mt-0.5">{{ formatDate(f.invoice?.due_date || '') }}</p>
+                <span class="text-slate-400 block text-[11px]">Due date</span>
+                <span>{{ formatDate(f.invoice?.due_date || '') }}</span>
               </div>
               <div>
-                <p class="text-orbyte-muted">Overdue Duration</p>
-                <p class="font-medium mt-0.5" :class="f.invoice?.days_overdue ? 'text-red-600 font-semibold' : 'text-orbyte-muted'">
-                  {{ f.invoice?.days_overdue ? `${f.invoice.days_overdue} days overdue` : 'Not overdue' }}
-                </p>
-              </div>
-              <div>
-                <p class="text-orbyte-muted">Reminder Stage</p>
-                <p class="font-medium text-orbyte-ink mt-0.5">{{ formatCheckpoint(f.checkpoint) }}</p>
+                <span class="text-slate-400 block text-[11px]">Duration</span>
+                <span :class="f.invoice?.days_overdue ? 'text-rose-600 font-medium' : 'text-slate-600'">
+                  {{ formatOverdueDays(f.invoice?.days_overdue || 0) }}
+                </span>
               </div>
             </div>
 
-            <!-- Reason -->
-            <div>
-              <p class="text-[11px] font-medium text-orbyte-muted uppercase tracking-wider">Reason</p>
-              <p class="text-xs text-orbyte-ink mt-0.5">{{ f.reason }}</p>
+            <p class="text-xs text-slate-500">
+              <span class="font-medium text-slate-700">{{ formatCheckpoint(f.checkpoint) }}:</span> {{ f.reason }}
+            </p>
+
+            <!-- Exact Message in normal font -->
+            <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+              {{ f.message }}
             </div>
 
-            <!-- Exact Message -->
-            <div>
-              <p class="text-[11px] font-medium text-orbyte-muted uppercase tracking-wider mb-1">Exact Message</p>
-              <div class="rounded-xl border border-orbyte-border bg-orbyte-bg/70 p-3 text-sm text-orbyte-ink font-mono whitespace-pre-wrap leading-relaxed">
-                {{ f.message }}
-              </div>
-            </div>
-
-            <!-- State Chips -->
-            <div class="flex flex-wrap gap-2 items-center text-xs pt-1">
-              <span class="rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1 text-amber-700 font-medium">
+            <!-- State chips -->
+            <div class="flex flex-wrap gap-1.5 items-center text-[11px] pt-1">
+              <span class="rounded px-2 py-0.5 font-medium bg-amber-50 text-amber-700">
                 {{ formatApprovalState(f.approval_state) }}
               </span>
-              <span class="rounded-md bg-slate-100 border border-slate-200 px-2.5 py-1 text-slate-700 font-medium">
+              <span class="rounded px-2 py-0.5 font-medium bg-slate-100 text-slate-600">
                 {{ formatSendState(f.send_state) }}
               </span>
-              <span v-if="f.delivery_status" class="rounded-md bg-blue-50 border border-blue-200 px-2.5 py-1 text-blue-700">
+              <span v-if="f.delivery_status" class="rounded px-2 py-0.5 font-medium bg-blue-50 text-blue-700">
                 {{ formatDeliveryStatus(f.delivery_status) }}
               </span>
-              <span v-if="f.approved_at" class="text-orbyte-muted text-[11px]">
-                Approved on {{ formatDateTime(f.approved_at) }}
+              <span v-if="f.approved_at" class="text-slate-400 text-[10px] tabular-nums">
+                Approved {{ formatDateTime(f.approved_at) }}
               </span>
             </div>
           </div>
 
-          <!-- Actions -->
-          <div class="flex flex-wrap gap-2 lg:flex-col lg:min-w-[170px] justify-start">
+          <!-- Actions: 1 primary button + ⋯ dropdown menu -->
+          <div class="flex items-center gap-1.5 shrink-0 self-start sm:self-auto" @click.stop>
             <template v-if="f.approval_state === 'pending'">
-              <button class="success-btn" @click="handleApprove(f)">
-                <Check class="w-4 h-4" />Approve
-              </button>
-              <button class="outline-btn" @click="beginEdit(f)">
-                <Pencil class="w-4 h-4" />Edit Draft
-              </button>
-              <button class="danger-btn" @click="handleReject(f)">
-                <X class="w-4 h-4" />Reject
+              <button class="primary-btn" @click="handleApprove(f)">
+                <Check class="w-3.5 h-3.5" /> Approve
               </button>
             </template>
-            <button
-              v-if="f.approval_state === 'approved' && f.send_state === 'not_sent'"
-              class="primary-btn"
-              @click="handleSend(f)"
-            >
-              <Send class="w-4 h-4" />Send (Simulation)
-            </button>
-            <button v-if="f.invoice" class="outline-btn" @click="openInvoice(f.invoice)">
-              <Eye class="w-4 h-4" />View Invoice
-            </button>
+            <template v-else-if="f.approval_state === 'approved' && f.send_state === 'not_sent'">
+              <button class="primary-btn" @click="handleSend(f)">
+                <Send class="w-3.5 h-3.5" /> Send (simulation)
+              </button>
+            </template>
+            <template v-else-if="f.invoice">
+              <button class="outline-btn" @click="openInvoice(f.invoice)">
+                View invoice
+              </button>
+            </template>
+
+            <!-- ⋯ more menu -->
+            <div class="relative">
+              <button
+                type="button"
+                class="outline-btn !px-2"
+                aria-label="More actions"
+                @click.stop="toggleMenu('fu-' + f.id)"
+              >
+                <MoreHorizontal class="w-4 h-4 text-slate-600" />
+              </button>
+
+              <div
+                v-if="activeMenuId === 'fu-' + f.id"
+                class="absolute right-0 mt-1 w-44 rounded-lg bg-white shadow-popover border border-slate-200 py-1 z-30 text-xs"
+              >
+                <button
+                  v-if="f.approval_state === 'pending'"
+                  class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700"
+                  @click="beginEdit(f)"
+                >
+                  Edit draft
+                </button>
+                <button
+                  v-if="f.approval_state === 'pending'"
+                  class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-rose-600"
+                  @click="handleReject(f)"
+                >
+                  Reject
+                </button>
+                <button
+                  v-if="f.invoice"
+                  class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700"
+                  @click="openInvoice(f.invoice)"
+                >
+                  View invoice
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -354,151 +396,214 @@ function keepResponseOnHold() {
     <!-- Section 2: Customer Responses -->
     <section v-if="tab === 'all' || tab === 'responses'" class="space-y-3">
       <div class="flex items-center justify-between">
-        <h3 class="text-sm font-semibold">Customer Responses</h3>
-        <span class="text-xs text-orbyte-muted">{{ currentBusiness?.name }}</span>
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Customer responses</h2>
+        <span class="text-[11px] text-slate-500">{{ currentBusiness?.name }}</span>
       </div>
-      <p v-if="!responses.length" class="card p-6 text-sm text-orbyte-muted">
+
+      <p v-if="!responses.length" class="card p-6 text-center text-xs text-slate-400">
         No customer responses recorded yet for {{ currentBusiness?.name }}.
       </p>
 
-      <div v-for="r in responses" :key="r.id" class="card p-5">
-        <div class="flex flex-col gap-4 lg:flex-row lg:justify-between">
-          <div class="flex-1 space-y-3">
-            <p class="font-semibold text-base">
-              {{ r.customer?.name }}
-              <span class="ml-2 font-normal text-sm font-mono text-orbyte-muted">{{ r.invoice?.invoice_number }}</span>
-              <span v-if="r.invoice" class="ml-2 text-xs font-normal text-orbyte-muted">
-                (Outstanding: {{ formatMYR(r.invoice.outstanding_balance) }})
+      <div v-for="r in responses" :key="r.id" class="card p-4 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div class="flex-1 space-y-2 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-xs text-slate-900">{{ r.customer?.name }}</span>
+              <span class="font-mono text-xs text-slate-500 font-medium">{{ r.invoice?.invoice_number }}</span>
+              <span v-if="r.invoice" class="text-xs text-slate-500 tabular-nums">
+                ({{ formatMYR(r.invoice.outstanding_balance) }} outstanding)
               </span>
-            </p>
-            <p class="rounded-xl bg-orbyte-bg p-3 text-sm italic border border-orbyte-border">“{{ r.message }}”</p>
+            </div>
 
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div class="rounded-xl border border-orbyte-border bg-white p-3">
-                <p class="info-label">SIMULATED RESPONSE CLASSIFICATION</p>
-                <p class="text-sm font-semibold capitalize text-orbyte-ink mt-0.5">{{ formatAiCategory(r.ai_category) }}</p>
-                <p class="text-xs text-orbyte-muted mt-1" v-if="r.ai_confidence !== null">
+            <!-- Customer message in normal clean font -->
+            <div class="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-800 italic">
+              “{{ r.message }}”
+            </div>
+
+            <!-- Details: category, suggested action -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div class="rounded-lg border border-slate-200 p-2.5 bg-white">
+                <span class="text-[11px] text-slate-500 block">Classification</span>
+                <span class="font-medium text-slate-900 mt-0.5 block">
+                  {{ formatAiCategory(r.ai_category) }}
+                </span>
+                <span v-if="r.ai_confidence !== null" class="text-[10px] text-slate-400 mt-0.5 block tabular-nums">
                   Confidence: {{ Math.round(r.ai_confidence * 100) }}%
-                </p>
+                </span>
               </div>
-              <div class="rounded-xl border border-orbyte-border bg-white p-3">
-                <p class="info-label">SUGGESTED ACTION</p>
-                <p class="text-sm text-orbyte-ink mt-0.5">{{ r.ai_suggested_action }}</p>
+              <div class="rounded-lg border border-slate-200 p-2.5 bg-white">
+                <span class="text-[11px] text-slate-500 block">Suggested action</span>
+                <span class="text-slate-800 text-[11px] mt-0.5 block leading-normal">
+                  {{ r.ai_suggested_action }}
+                </span>
               </div>
             </div>
 
-            <div class="flex flex-wrap gap-4 text-xs text-orbyte-muted">
-              <span v-if="r.ai_extracted_date" class="font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                Proposed promise date: {{ formatDate(r.ai_extracted_date) }}
+            <div class="flex flex-wrap gap-3 text-[11px] text-slate-500 pt-0.5">
+              <span v-if="r.ai_extracted_date" class="rounded px-1.5 py-0.5 font-medium bg-purple-50 text-purple-700">
+                Proposed date: {{ formatDate(r.ai_extracted_date) }}
               </span>
-              <span>Review status: <strong>{{ formatReviewStatus(r.review_status) }}</strong></span>
-              <span>Received: {{ formatDateTime(r.created_at) }}</span>
+              <span>Review status: <strong class="text-slate-700">{{ formatReviewStatus(r.review_status) }}</strong></span>
+              <span class="tabular-nums">Received {{ formatDateTime(r.created_at) }}</span>
             </div>
           </div>
 
-          <!-- Buttons strictly follow invoice's CURRENT state (spec requirement 6) -->
-          <div class="flex flex-wrap gap-2 lg:flex-col lg:min-w-[170px] justify-start">
-            <button v-if="r.invoice" class="outline-btn" @click="openInvoice(r.invoice)">
-              <Eye class="w-4 h-4" />Review Invoice
-            </button>
-
-            <!-- Verification buttons: only while verification_hold is active -->
+          <!-- Actions: 1 primary button + ⋯ dropdown menu -->
+          <div class="flex items-center gap-1.5 shrink-0 self-start sm:self-auto" @click.stop>
+            <!-- Primary Action selection -->
             <template v-if="r.invoice?.verification_hold">
               <button
-                class="success-btn"
-                @click="execute(() => resolveVerificationHold(r.invoice!.id, true, currentUser.name, currentUser.business_id), 'Verification hold reviewed — payment remains unpaid until recorded')"
+                class="primary-btn"
+                @click="execute(() => resolveVerificationHold(r.invoice!.id, true, currentUser.name, currentUser.business_id), 'Verification hold reviewed')"
               >
-                <ShieldCheck class="w-4 h-4" />Review Verification
-              </button>
-              <button
-                class="outline-btn"
-                @click="execute(() => resolveVerificationHold(r.invoice!.id, false, currentUser.name, currentUser.business_id), 'Hold released for seller follow-up')"
-              >
-                Cannot Verify
+                Review verification
               </button>
             </template>
-
-            <!-- Resolve Dispute: only while dispute_active is true -->
-            <button
-              v-if="r.invoice?.dispute_active"
-              class="outline-btn"
-              @click="execute(() => resolveDispute(r.invoice!.id, currentUser.name, currentUser.business_id), 'Dispute resolved')"
-            >
-              Resolve Dispute
-            </button>
-
-            <!-- Promise buttons: only while unpaid (outstanding > 0 and status !== 'paid'), for payment_promise OR payment_promise_or_extension_request with ai_extracted_date -->
-            <template v-if="r.invoice && r.invoice.outstanding_balance > 0 && r.invoice.status !== 'paid' && ['payment_promise', 'payment_promise_or_extension_request'].includes(r.ai_category || '') && r.ai_extracted_date">
+            <template v-else-if="r.invoice?.dispute_active">
               <button
-                class="success-btn"
+                class="primary-btn"
+                @click="execute(() => resolveDispute(r.invoice!.id, currentUser.name, currentUser.business_id), 'Dispute resolved')"
+              >
+                Resolve dispute
+              </button>
+            </template>
+            <template v-else-if="r.invoice && r.invoice.outstanding_balance > 0 && r.invoice.status !== 'paid' && ['payment_promise', 'payment_promise_or_extension_request'].includes(r.ai_category || '') && r.ai_extracted_date">
+              <button
+                class="primary-btn"
                 @click="execute(() => confirmPromise(r.invoice!.id, r.ai_extracted_date!, true, currentUser.name, currentUser.business_id), 'Promise confirmed')"
               >
-                Confirm Promise
+                Confirm promise
               </button>
-              <button
-                class="outline-btn"
-                @click="execute(() => confirmPromise(r.invoice!.id, r.ai_extracted_date!, false, currentUser.name, currentUser.business_id), 'Promise declined')"
-              >
-                Decline
+            </template>
+            <template v-else-if="r.review_status === 'pending'">
+              <button class="primary-btn" @click="reviewResponse(r.id)">
+                Mark as reviewed
+              </button>
+            </template>
+            <template v-else-if="r.invoice">
+              <button class="outline-btn" @click="openInvoice(r.invoice)">
+                View invoice
               </button>
             </template>
 
-            <!-- Mark as reviewed and Keep on Hold -->
-            <template v-if="r.review_status === 'pending'">
-              <button class="outline-btn" @click="reviewResponse(r.id)">
-                <Check class="w-4 h-4" />Mark as reviewed
+            <!-- ⋯ more menu -->
+            <div class="relative">
+              <button
+                type="button"
+                class="outline-btn !px-2"
+                aria-label="More response actions"
+                @click.stop="toggleMenu('cr-' + r.id)"
+              >
+                <MoreHorizontal class="w-4 h-4 text-slate-600" />
               </button>
-              <button class="outline-btn" @click="keepResponseOnHold()">
-                <PauseCircle class="w-4 h-4" />Keep On Hold
-              </button>
-            </template>
+
+              <div
+                v-if="activeMenuId === 'cr-' + r.id"
+                class="absolute right-0 mt-1 w-44 rounded-lg bg-white shadow-popover border border-slate-200 py-1 z-30 text-xs"
+              >
+                <!-- Verification hold secondary -->
+                <button
+                  v-if="r.invoice?.verification_hold"
+                  class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700"
+                  @click="execute(() => resolveVerificationHold(r.invoice!.id, false, currentUser.name, currentUser.business_id), 'Verification unconfirmed')"
+                >
+                  Cannot verify
+                </button>
+
+                <!-- Promise decline secondary -->
+                <button
+                  v-if="r.invoice && r.invoice.outstanding_balance > 0 && r.invoice.status !== 'paid' && ['payment_promise', 'payment_promise_or_extension_request'].includes(r.ai_category || '') && r.ai_extracted_date"
+                  class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700"
+                  @click="execute(() => confirmPromise(r.invoice!.id, r.ai_extracted_date!, false, currentUser.name, currentUser.business_id), 'Promise declined')"
+                >
+                  Decline promise
+                </button>
+
+                <!-- Mark as reviewed (if not primary) -->
+                <button
+                  v-if="r.review_status === 'pending' && (r.invoice?.verification_hold || r.invoice?.dispute_active || (r.invoice?.outstanding_balance && r.ai_extracted_date))"
+                  class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700"
+                  @click="reviewResponse(r.id)"
+                >
+                  Mark as reviewed
+                </button>
+
+                <!-- Keep on hold -->
+                <button
+                  v-if="r.review_status === 'pending'"
+                  class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700"
+                  @click="keepResponseOnHold()"
+                >
+                  Keep on hold
+                </button>
+
+                <!-- Review invoice -->
+                <button
+                  v-if="r.invoice"
+                  class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700"
+                  @click="openInvoice(r.invoice)"
+                >
+                  View invoice
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Section 3: Exceptions (including 21+ day escalations on unpaid invoices) -->
+    <!-- Section 3: Exceptions -->
     <section v-if="tab === 'all' || tab === 'exceptions'" class="space-y-3">
       <div class="flex items-center justify-between">
-        <h3 class="text-sm font-semibold">Exceptions</h3>
-        <span class="text-xs text-orbyte-muted">{{ currentBusiness?.name }}</span>
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Exceptions</h2>
+        <span class="text-[11px] text-slate-500">{{ currentBusiness?.name }}</span>
       </div>
-      <p v-if="!exceptions.length" class="card p-6 text-sm text-orbyte-muted">
-        No exceptions requiring attention for {{ currentBusiness?.name }}.
+
+      <p v-if="!exceptions.length" class="card p-6 text-center text-xs text-slate-400">
+        No exceptions currently requiring attention for {{ currentBusiness?.name }}.
       </p>
 
-      <div v-for="(e, k) in exceptions" :key="k" class="card flex gap-3 p-4">
-        <span class="rounded-lg bg-red-50 p-2 h-fit border border-red-100">
-          <AlertTriangle class="w-4 h-4 text-red-500" />
-        </span>
-        <div class="flex-1">
-          <div class="flex flex-wrap items-center gap-2">
-            <h4 class="font-semibold text-sm">{{ e.title }}</h4>
-            <span class="text-orbyte-muted font-normal text-xs font-mono">· {{ e.invoice.invoice_number }}</span>
-            <span class="text-xs text-orbyte-muted font-medium">({{ e.invoice.customer?.name }})</span>
-            <span class="text-xs font-bold text-orbyte-ink ml-auto">{{ formatMYR(e.invoice.outstanding_balance) }}</span>
+      <div v-for="(e, k) in exceptions" :key="k" class="card p-4 flex items-center justify-between gap-3">
+        <div class="flex items-start gap-2.5 min-w-0">
+          <span class="rounded p-1.5 bg-rose-50 text-rose-600 shrink-0 mt-0.5">
+            <AlertTriangle class="w-4 h-4" />
+          </span>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-semibold text-slate-900">{{ e.title }}</span>
+              <span class="text-xs font-mono text-slate-500">· {{ e.invoice.invoice_number }}</span>
+              <span class="text-xs text-slate-500 font-medium">({{ e.invoice.customer?.name }})</span>
+              <span class="text-xs font-bold text-slate-900 tabular-nums ml-1">
+                {{ formatMYR(e.invoice.outstanding_balance) }}
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 mt-0.5 leading-normal">{{ e.reason }}</p>
+            <p class="text-[11px] text-slate-400 mt-1">Recommended: {{ e.action }}</p>
           </div>
-          <p class="text-sm text-orbyte-muted mt-1">{{ e.reason }}</p>
-          <p class="text-xs mt-1.5 font-medium text-orbyte-ink">Recommended: <span class="text-orbyte-muted font-normal">{{ e.action }}</span></p>
-          <button class="outline-btn mt-3 !py-1 !text-xs" @click="openInvoice(e.invoice)">
-            View Invoice
-          </button>
         </div>
+
+        <button class="outline-btn !py-1 !px-2.5 shrink-0" @click="openInvoice(e.invoice)">
+          Review
+        </button>
       </div>
     </section>
 
     <!-- Section 4: History -->
-    <section v-if="tab === 'history'" class="card p-5">
-      <h3 class="font-semibold mb-4">Activity History ({{ currentBusiness?.name }})</h3>
+    <section v-if="tab === 'history'" class="card p-4 space-y-3">
+      <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-700">Activity history ({{ currentBusiness?.name }})</h2>
       <p v-if="!activity.length" class="empty-text">No activity recorded for this business.</p>
-      <div
-        v-for="(e, k) in activity"
-        :key="e.id"
-        class="border-l-2 pl-4 py-2"
-        :class="k === 0 ? 'border-orbyte-blue' : 'border-orbyte-border'"
-      >
-        <p class="text-sm text-orbyte-ink">{{ formatActivityText(e.description, data) }}</p>
-        <p class="text-xs text-orbyte-muted mt-1">{{ formatDateTime(e.created_at) }} · {{ e.actor }} ({{ e.actor_role }})</p>
+      <div class="divide-y divide-slate-100">
+        <div
+          v-for="e in activity"
+          :key="e.id"
+          class="py-2.5 text-xs flex items-baseline justify-between gap-3"
+        >
+          <div class="min-w-0 flex-1">
+            <p class="text-slate-900 font-medium">{{ formatActivityText(e.description, data) }}</p>
+            <p class="text-[11px] text-slate-400 mt-0.5">{{ e.actor }} ({{ e.actor_role }})</p>
+          </div>
+          <span class="text-[11px] text-slate-400 shrink-0 tabular-nums">{{ formatDateTime(e.created_at) }}</span>
+        </div>
       </div>
     </section>
 
@@ -512,16 +617,16 @@ function keepResponseOnHold() {
     />
 
     <!-- Edit Reminder Modal -->
-    <BaseModal :open="!!editId" title="Edit Reminder Message" @close="editId = null">
-      <p class="text-sm text-orbyte-muted mb-3">
-        Changing the reminder invalidates previous approval. Seller approval is required again before sending.
+    <BaseModal :open="!!editId" title="Edit reminder draft" @close="editId = null">
+      <p class="text-xs text-slate-500 mb-3">
+        Editing the draft message invalidates previous approvals. Seller approval is required before sending.
       </p>
-      <p v-if="editError" class="text-sm text-red-600 mb-2">{{ editError }}</p>
-      <textarea v-model="editText" rows="6" class="form-input"></textarea>
+      <p v-if="editError" class="text-xs text-rose-600 mb-2">{{ editError }}</p>
+      <textarea v-model="editText" rows="5" class="form-input"></textarea>
       <template #footer>
         <div class="flex justify-end gap-2">
           <button class="outline-btn" @click="editId = null">Cancel</button>
-          <button class="primary-btn" @click="saveEdit">Save & Reset Approval</button>
+          <button class="primary-btn" @click="saveEdit">Save draft</button>
         </div>
       </template>
     </BaseModal>
