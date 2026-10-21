@@ -8,7 +8,11 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "vue-tsc --noEmit",
-    "test:logic": "tsc -p tsconfig.logic-tests.json && node tests/setup-test-build.cjs && node --test tests/logic.test.cjs"
+    "test:logic": "tsc -p tsconfig.logic-tests.json && node tests/setup-test-build.cjs && node --test tests/logic.test.cjs",
+    "server:build": "tsc -p tsconfig.server.json && node server/build.cjs",
+    "server": "npm run server:build && node --env-file-if-exists=.env server/app.cjs",
+    "test:telegram": "npm run server:build && node --test tests/telegram.test.cjs",
+    "test:telegram:live": "npm run server:build && node --env-file-if-exists=.env tests/telegram-live.cjs"
   },
   "dependencies": {
     "vue": "^3.5.13",
@@ -27,5 +31,8 @@
     "typescript": "~5.6.3",
     "vite": "^5.4.11",
     "vue-tsc": "^2.2.0"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }

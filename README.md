@@ -3,7 +3,7 @@
 > A seller-controlled invoice follow-up prototype for Malaysian micro and small businesses. NudgeWise tracks outstanding invoices, prepares reminder drafts, records simulated follow-ups, and explains which customer records need attention.
 
 **Current version:** Vue demo v1.1 (Phase 1 reminder safeguards + Phase 2 customer follow-up priorities)  
-**Status:** Local prototype using **synthetic data only**. No external messaging, model inference, real payments, or production backend is connected yet.
+**Status:** Synthetic-data prototype with an optional local Telegram receipt integration: Docling OCR → `gemma4:31b-cloud` → invoice matching → demo settlement or seller attention. See [setup and test instructions](server/README.md). Real bank verification and production authentication are not implemented.
 
 ## Team Information
 
@@ -30,23 +30,23 @@
 
 Malaysian small-business sellers may need to compare invoice records, payment updates, and customer messages manually when following up on unpaid invoices. Repeated checks can lead to wasted time or inappropriate reminders if an invoice is already settled, disputed, or awaiting verification.
 
-**NudgeWise** focuses on a controlled follow-up workflow: **invoice checkpoint → draft → seller review/approval → revalidation → recorded outcome**. The current build simulates the workflow using local data; actual delivery through Telegram is future work.
+**NudgeWise** focuses on a controlled follow-up workflow: **invoice checkpoint → draft → seller review/approval → revalidation → recorded outcome**. The current build simulates the workflow using local data; optional Telegram delivery and receipt processing are available in local integration mode.
 
 ## Implemented Demo Features
 
 - **Dashboard:** collected/outstanding/overdue metrics, invoice search and filters, charts, and invoice details.
 - **Action Center:** simulated reminder approvals, rejections, customer-response exceptions, and activity history.
-- **AI Assistant page:** **simulated**, invoice-aware responses; it is **not** connected to a language model yet.
+- **AI Assistant page:** **simulated**, invoice-aware responses; it uses `gemma4:31b-cloud` when Telegram integration mode is enabled, and local rules otherwise.
 - **Reminder safeguards (Phase 1):** due/overdue checkpoints; holds for disputes and unverified payment claims; approval checks; duplicate-checkpoint protection; missed-payment-promise alerts in the demo logic.
 - **Customer priorities (Phase 2):** explainable **Red / Yellow / Green / Grey** classification from synthetic invoice/payment history. Customer priority is separate from the urgency of an operational review.
 - **Demo controls:** simulated business date, invoice checks, payment recording, customer replies, and reset.
-- **Storage:** the current prototype saves demo state in the **browser's localStorage**, not a server database. It uses the key `nudgewise-demo-v1.1`.
+- **Storage:** browser-only mode uses localStorage (`nudgewise-demo-v1.1`); Telegram mode uses a separate local SQLite store shared by the bot and dashboard.
 
 ### Not Implemented Yet
 
-- Real Telegram bot messages, webhooks, customer opt-in, and seller authentication.
-- Gemma 4 via Ollama or RunPod; model-output validation and hosted inference.
-- SQL database and server-side business/role access controls.
+- Production Telegram webhooks, customer onboarding and seller authentication. Local polling and manual test-chat linking are implemented.
+- RunPod deployment. Local Ollama with Gemma 4 cloud and receipt-output validation are implemented in optional integration mode.
+- Production database and server-side user authentication. The local service uses SQLite and existing demo role rules.
 - Live Orbyte platform integration, real payment verification, and production-grade delivery handling.
 
 **Do not use this prototype with real customer details, credentials, or financial records.** The demo is not a payment-processing service or statutory e-invoice submission system.
