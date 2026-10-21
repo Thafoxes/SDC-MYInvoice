@@ -15,7 +15,7 @@ const links = [
   <aside class="fixed left-0 top-0 z-40 h-full w-[240px] flex flex-col border-r border-orbyte-border bg-orbyte-sidebar transition-transform duration-200" :class="mobileOpen?'translate-x-0':'-translate-x-full lg:translate-x-0'">
     <div class="flex items-center justify-between px-5 pt-6 pb-4">
       <div class="flex items-center gap-2.5"><span class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-orbyte-blue to-orbyte-button text-white"><Sparkles class="w-5 h-5" /></span>
-        <div><h1 class="text-lg font-bold leading-none">Orbyte</h1><p class="text-[10px] text-orbyte-muted mt-1">Invoice Follow-Up Assistant</p></div></div>
+        <div><h1 class="text-lg font-bold leading-none">NudgeWise</h1><p class="text-[10px] text-orbyte-muted mt-1">Invoice Follow-Up Assistant</p></div></div>
       <button class="lg:hidden" aria-label="Close navigation" @click="mobileOpen=false"><X class="w-5 h-5" /></button>
     </div>
     <nav class="flex-1 px-3 py-4 space-y-1">

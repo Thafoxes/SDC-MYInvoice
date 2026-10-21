@@ -5,21 +5,28 @@ import AppSidebar from '@/components/AppSidebar.vue';
 import AppHeader from '@/components/AppHeader.vue';
 import DemoControls from '@/components/DemoControls.vue';
 import { useDemoStore } from '@/composables/useDemoStore';
-import { DEMO_BUSINESS_ID, DEMO_SELLER_ID } from '@/lib/store';
-const {data,refreshStore}=useDemoStore();
-const seller=computed(()=>data.value.users.find(u=>u.id===DEMO_SELLER_ID)??data.value.users[0]);
-const notifications=computed(()=>data.value.notifications.filter(n=>n.business_id===DEMO_BUSINESS_ID));
-const onStorage=()=>refreshStore();
-onMounted(()=>window.addEventListener('storage',onStorage));
-onUnmounted(()=>window.removeEventListener('storage',onStorage));
+import { useCurrentUser } from '@/composables/useCurrentUser';
+
+const { data, refreshStore } = useDemoStore();
+const { currentUser } = useCurrentUser();
+
+const notifications = computed(() => data.value.notifications.filter(n => n.business_id === currentUser.value.business_id));
+
+const onStorage = () => refreshStore();
+onMounted(() => window.addEventListener('storage', onStorage));
+onUnmounted(() => window.removeEventListener('storage', onStorage));
 </script>
+
 <template>
   <div class="min-h-screen bg-orbyte-bg text-orbyte-ink">
     <AppSidebar />
     <div class="lg:pl-[240px]">
-      <AppHeader :notifications="notifications" :simulated-date="data.demoState.simulated_date" :seller-name="seller.name" :seller-role="seller.role" :avatar-color="seller.avatar_color" />
+      <AppHeader
+        :notifications="notifications"
+        :simulated-date="data.demoState.simulated_date"
+      />
       <main class="px-4 py-6 lg:px-8"><RouterView /></main>
     </div>
-    <DemoControls :seller-name="seller.name" />
+    <DemoControls :seller-name="currentUser.name" />
   </div>
 </template>
