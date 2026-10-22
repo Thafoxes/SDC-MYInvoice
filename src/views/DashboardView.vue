@@ -5,6 +5,7 @@ import { ArrowRight } from 'lucide-vue-next';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS, BarElement, CategoryScale, LinearScale, Tooltip } from 'chart.js';
 import AttentionQueue from '@/components/AttentionQueue.vue';
+import SellerWins from '@/components/SellerWins.vue';
 import { getAttention } from '@/lib/attention';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { DEMO_BUSINESS_ID, DEMO_SELLER_ID } from '@/lib/store';
@@ -194,6 +195,9 @@ const chartOptions = {
         <p class="mt-1 text-[13px] text-slate-500">{{ k.sub }}</p>
       </RouterLink>
     </div>
+
+    <!-- Seller wins: monthly goal, time saved, this week -->
+    <SellerWins :business-id="bizId" />
 
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
       <!-- Today's priorities -->
