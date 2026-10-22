@@ -1,109 +1,282 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
-import { DollarSign, Clock, AlertTriangle, Calendar, Search, Eye, ChevronLeft, ChevronRight } from 'lucide-vue-next';
-import { Doughnut, Line } from 'vue-chartjs';
-import { Chart as ChartJS, ArcElement, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler } from 'chart.js';
+import { ref, computed } from 'vue';
+import { RouterLink } from 'vue-router';
+import { ArrowRight } from 'lucide-vue-next';
+import { Bar } from 'vue-chartjs';
+import { Chart as ChartJS, BarElement, CategoryScale, LinearScale, Tooltip } from 'chart.js';
 import AttentionQueue from '@/components/AttentionQueue.vue';
-import StatusBadge from '@/components/StatusBadge.vue';
-import InvoiceDetailDrawer from '@/components/InvoiceDetailDrawer.vue';
+import { getAttention } from '@/lib/attention';
 import { useDemoStore } from '@/composables/useDemoStore';
-import { DEMO_BUSINESS_ID, computeInvoiceWithCustomer } from '@/lib/store';
+import { DEMO_BUSINESS_ID, DEMO_SELLER_ID } from '@/lib/store';
+import { computeInvoiceWithCustomer } from '@/lib/store';
 import { calculateCustomerPriorities } from '@/lib/priorityEngine';
-import type { CustomerPriority, PriorityLevel } from '@/lib/priorityEngine';
-import { formatMYR, formatDate, sumMoney, daysOverdue } from '@/lib/format';
-import type { InvoiceWithCustomer } from '@/types';
-ChartJS.register(ArcElement,LineElement,PointElement,CategoryScale,LinearScale,Tooltip,Legend,Filler);
-const {data}=useDemoStore();
-const seller=computed(()=>data.value.users.find(u=>u.id==='user-seller') ?? data.value.users[0]);
-const today=computed(()=>data.value.demoState.simulated_date);
-const invoices=computed(()=>data.value.invoices.filter(i=>i.business_id===DEMO_BUSINESS_ID).map(i=>computeInvoiceWithCustomer(i,data.value,today.value)));
-const priorityRecords=computed(()=>calculateCustomerPriorities(DEMO_BUSINESS_ID,today.value,data.value));
-const expandedPriority=ref<string|null>(null);
-const priorityList=computed(()=>[...priorityRecords.value].sort((a,b)=>{
- const rank:Record<PriorityLevel,number>={red:0,yellow:1,grey:2,green:3};
- return rank[a.level]-rank[b.level] || a.customerName.localeCompare(b.customerName);
-}));
-function priorityBadge(level:PriorityLevel){
- return {red:'bg-red-50 text-red-700 border-red-100',yellow:'bg-amber-50 text-amber-700 border-amber-100',green:'bg-green-50 text-green-700 border-green-100',grey:'bg-slate-50 text-slate-600 border-slate-200'}[level];
+import type { PriorityLevel } from '@/lib/priorityEngine';
+import { formatMYR, formatDate, sumMoney } from '@/lib/format';
+import { formatShortPriorityReason, plural } from '@/presentation/display';
+
+ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip);
+
+const { data } = useDemoStore();
+const currentUser = computed(() => data.value.users.find(u => u.id === DEMO_SELLER_ID)!);
+const currentBusiness = computed(() => data.value.businesses.find(b => b.id === DEMO_BUSINESS_ID));
+const today = computed(() => data.value.demoState.simulated_date);
+const bizId = computed(() => currentUser.value.business_id);
+
+/* ---------- Source data (current business only; settled HIST-* history excluded) ---------- */
+const allInvoices = computed(() =>
+  data.value.invoices
+    .filter(i => i.business_id === bizId.value)
+    .map(i => computeInvoiceWithCustomer(i, data.value, today.value)),
+);
+const invoices = computed(() => allInvoices.value.filter(i => !i.invoice_number.startsWith('HIST-')));
+const openInvoices = computed(() => invoices.value.filter(i => i.outstanding_balance > 0));
+const overdueInvoices = computed(() => invoices.value.filter(i => i.status === 'overdue'));
+
+/* ---------- Period (affects "Collected") ---------- */
+const periods = [
+  { id: 'month', label: 'This month' },
+  { id: 'week', label: 'This week' },
+  { id: 'today', label: 'Today' },
+] as const;
+type PeriodId = (typeof periods)[number]['id'];
+const period = ref<PeriodId>('month');
+
+function periodStart(): string {
+  if (period.value === 'today') return today.value;
+  if (period.value === 'month') return today.value.slice(0, 8) + '01';
+  const d = new Date(today.value + 'T12:00:00');
+  d.setDate(d.getDate() - d.getDay());
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-function priorityInvoiceRefs(priority:CustomerPriority){
- return priority.supportingInvoiceIds.map(id=>data.value.invoices.find(i=>i.id===id)?.invoice_number ?? id).join(', ') || 'None';
-}
-const dateFilterOptions=['today','week','month','custom'] as const;
-const dateFilter=ref<'today'|'week'|'month'|'custom'>('week'),customStart=ref('2026-10-01'),customEnd=ref('2026-10-20');
-const search=ref(''), statusFilter=ref('all'),sortBy=ref<'dueDate'|'outstanding'>('dueDate'),currentPage=ref(0), pageSize=8;
-const selectedId=ref<string|null>(null),drawerOpen=ref(false);
-const selected=computed(()=>invoices.value.find(i=>i.id===selectedId.value)??null);
-function periodBounds(){const d=new Date(today.value+'T12:00:00');if(dateFilter.value==='today')return {start:today.value,end:today.value};if(dateFilter.value==='custom')return{start:customStart.value,end:customEnd.value};if(dateFilter.value==='month')return{start:today.value.slice(0,8)+'01',end:today.value};const day=d.getDay();d.setDate(d.getDate()-day);return{start:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,end:today.value};}
-const collected=computed(()=>{const p=periodBounds();return sumMoney(data.value.payments.filter(x=>x.business_id===DEMO_BUSINESS_ID && x.payment_date>=p.start && x.payment_date<=p.end && x.verification_status==='recorded').map(x=>x.amount));});
-const totalOutstanding=computed(()=>sumMoney(invoices.value.map(i=>i.outstanding_balance)));
-const overdueInvoices=computed(()=>invoices.value.filter(i=>i.status==='overdue'));
-const overdueAmount=computed(()=>sumMoney(overdueInvoices.value.map(i=>i.outstanding_balance)));
-const pendingCount=computed(()=>invoices.value.filter(i=>i.status==='pending').length);
-const summary=computed(()=>[
- {label:'Total Collected',value:formatMYR(collected.value),note:'Selected reporting period',icon:DollarSign,color:'#16A34A'},
- {label:'Total Outstanding',value:formatMYR(totalOutstanding.value),note:'Current snapshot',icon:Clock,color:'#F59E0B'},
- {label:'Overdue Amount',value:formatMYR(overdueAmount.value),note:'Current snapshot',icon:AlertTriangle,color:'#EF4444'},
+const recordedPayments = computed(() =>
+  data.value.payments.filter(p => p.business_id === bizId.value && p.verification_status === 'recorded'),
+);
+const collected = computed(() =>
+  sumMoney(recordedPayments.value.filter(p => p.payment_date >= periodStart() && p.payment_date <= today.value).map(p => p.amount)),
+);
+
+/* ---------- Work queue ---------- */
+const pendingApprovals = computed(() =>
+  data.value.followUpActions.filter(f => f.business_id === bizId.value && f.approval_state === 'pending' && f.send_state === 'not_sent'),
+);
+const attention = computed(() => getAttention(data.value, bizId.value, today.value));
+const exceptions = computed(() => attention.value.filter(i => !['approval', 'overdue'].includes(i.kind)));
+
+/* ---------- Customer health ---------- */
+const priorities = computed(() => calculateCustomerPriorities(bizId.value, today.value, data.value));
+const levelMeta: { id: PriorityLevel; label: string; color: string }[] = [
+  { id: 'red', label: 'Needs attention', color: 'bg-rose-500' },
+  { id: 'yellow', label: 'Follow-up due', color: 'bg-amber-400' },
+  { id: 'green', label: 'Routine', color: 'bg-emerald-500' },
+  { id: 'grey', label: 'New / limited history', color: 'bg-slate-300' },
+];
+const levelCounts = computed(() =>
+  levelMeta.map(l => ({ ...l, count: priorities.value.filter(p => p.level === l.id).length })),
+);
+const topAttention = computed(() => priorities.value.filter(p => p.level === 'red').slice(0, 3));
+
+/* ---------- KPIs ---------- */
+const needsActionCount = computed(() => attention.value.length);
+const outstandingTotal = computed(() => sumMoney(openInvoices.value.map(i => i.outstanding_balance)));
+const overdueTotal = computed(() => sumMoney(overdueInvoices.value.map(i => i.outstanding_balance)));
+const overduePct = computed(() => (outstandingTotal.value > 0 ? Math.round((overdueTotal.value / outstandingTotal.value) * 100) : 0));
+const kpis = computed(() => [
+  {
+    label: 'Outstanding',
+    value: formatMYR(outstandingTotal.value),
+    sub: plural(openInvoices.value.length, 'open invoice'),
+    to: '/invoices',
+    tone: 'text-slate-900',
+  },
+  {
+    label: 'Overdue',
+    value: formatMYR(overdueTotal.value),
+    sub: `${plural(overdueInvoices.value.length, 'invoice')} · ${overduePct.value}% of outstanding`,
+    to: '/invoices?status=overdue',
+    tone: overdueInvoices.value.length ? 'text-rose-600' : 'text-slate-900',
+  },
+  {
+    label: 'Collected',
+    value: formatMYR(collected.value),
+    sub: periods.find(p => p.id === period.value)!.label,
+    to: '/invoices?status=paid',
+    tone: 'text-slate-900',
+  },
+  {
+    label: 'Needs your action',
+    value: String(needsActionCount.value),
+    sub: `${plural(pendingApprovals.value.length, 'approval')} · ${plural(exceptions.value.length, 'exception')} · ${attention.value.filter(i => i.kind === 'overdue').length} overdue`,
+    to: '/action-center',
+    tone: needsActionCount.value ? 'text-blue-700' : 'text-slate-900',
+  },
 ]);
-const statusChart=computed(()=>({labels:['Paid','Pending','Overdue'],datasets:[{data:[invoices.value.filter(i=>i.status==='paid').length,pendingCount.value,overdueInvoices.value.length],backgroundColor:['#16A34A','#F59E0B','#EF4444'],borderWidth:0,spacing:2}]}));
-const trendChart=computed(()=>{const map=new Map<string,number>();data.value.payments.filter(p=>p.business_id===DEMO_BUSINESS_ID && p.verification_status==='recorded').forEach(p=>map.set(p.payment_date,(map.get(p.payment_date)||0)+p.amount));const a=[...map.entries()].sort((x,y)=>x[0].localeCompare(y[0]));return{labels:a.map(x=>x[0].slice(5)),datasets:[{label:'Recorded payments (RM)',data:a.map(x=>x[1]),borderColor:'#4096EE',backgroundColor:'rgba(64,150,238,.12)',pointBackgroundColor:'#1D72E0',fill:true,tension:.35}]};});
-const chartOptions={responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom' as const}}};
-const aging=computed(()=>[{label:'1–7 days',min:1,max:7},{label:'8–14 days',min:8,max:14},{label:'15–21 days',min:15,max:21},{label:'More than 21 days',min:22,max:9999}].map(b=>{const matched=overdueInvoices.value.filter(i=>{const d=daysOverdue(i.due_date,today.value);return d>=b.min&&d<=b.max;});return{label:b.label,count:matched.length,amount:sumMoney(matched.map(i=>i.outstanding_balance))};}));
-const filtered=computed(()=>invoices.value.filter(i=>(statusFilter.value==='all'||i.status===statusFilter.value)&&(i.invoice_number.toLowerCase().includes(search.value.toLowerCase())||i.customer?.name.toLowerCase().includes(search.value.toLowerCase()))).sort((a,b)=>sortBy.value==='dueDate'?a.due_date.localeCompare(b.due_date):b.outstanding_balance-a.outstanding_balance));
-const pages=computed(()=>Math.max(1,Math.ceil(filtered.value.length/pageSize)));
-const pageData=computed(()=>filtered.value.slice(Math.min(currentPage.value,pages.value-1)*pageSize,(Math.min(currentPage.value,pages.value-1)+1)*pageSize));
-watch([search,statusFilter],()=>currentPage.value=0);
-function openInvoice(i:InvoiceWithCustomer){selectedId.value=i.id;drawerOpen.value=true;}
+
+/* ---------- Overdue aging ---------- */
+const aging = computed(() => {
+  const buckets = [
+    { label: '1–7 days', min: 1, max: 7, color: 'bg-blue-500' },
+    { label: '8–14 days', min: 8, max: 14, color: 'bg-amber-400' },
+    { label: '15–21 days', min: 15, max: 21, color: 'bg-orange-500' },
+    { label: 'Over 21 days', min: 22, max: Infinity, color: 'bg-rose-500' },
+  ].map(b => {
+    const m = overdueInvoices.value.filter(i => i.days_overdue >= b.min && i.days_overdue <= b.max);
+    return { ...b, count: m.length, amount: sumMoney(m.map(i => i.outstanding_balance)) };
+  });
+  const max = Math.max(1, ...buckets.map(b => b.amount));
+  return buckets.map(b => ({ ...b, pct: Math.max(b.amount ? 2 : 0, Math.round((b.amount / max) * 100)) }));
+});
+
+/* ---------- Payments chart: last 30 days, daily ---------- */
+const paymentsChart = computed(() => {
+  const end = new Date(today.value + 'T12:00:00');
+  const days: string[] = [];
+  for (let k = 29; k >= 0; k--) {
+    const d = new Date(end);
+    d.setDate(d.getDate() - k);
+    days.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  }
+  const byDay = new Map<string, number>();
+  for (const p of recordedPayments.value) byDay.set(p.payment_date, (byDay.get(p.payment_date) ?? 0) + p.amount);
+  return {
+    labels: days.map(d => new Date(d + 'T12:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })),
+    datasets: [{
+      label: 'Payments (MYR)',
+      data: days.map(d => byDay.get(d) ?? 0),
+      backgroundColor: '#1D4ED8',
+      hoverBackgroundColor: '#1E40AF',
+      borderRadius: 3,
+      maxBarThickness: 14,
+    }],
+  };
+});
+const paymentsLast30 = computed(() => sumMoney(paymentsChart.value.datasets[0].data));
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { mode: 'index' as const, intersect: false },
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { display: false }, ticks: { maxTicksLimit: 6, color: '#64748B', font: { size: 12 } } },
+    y: { grid: { color: '#F1F5F9' }, border: { display: false }, ticks: { maxTicksLimit: 4, color: '#64748B', font: { size: 12 } } },
+  },
+};
+
 </script>
+
 <template>
-<div class="space-y-6">
- <div class="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end"><div><h2 class="text-lg font-semibold">Collection summary</h2><p class="text-xs text-orbyte-muted mt-1">Choose a period for collected payments. Balances show the current snapshot.</p></div>
-   <div class="flex flex-wrap items-center gap-1 rounded-xl border border-orbyte-border bg-white p-1 shadow-sm"><Calendar class="w-4 h-4 text-orbyte-muted ml-2"/><button v-for="f in dateFilterOptions" :key="f" @click="dateFilter=f" :aria-pressed="dateFilter===f" class="rounded-lg px-3 py-1.5 text-xs font-medium capitalize" :class="dateFilter===f?'bg-orbyte-button text-white':'text-orbyte-muted hover:bg-orbyte-bg'">{{f==='week'?'This Week':f==='month'?'This Month':f}}</button></div>
- </div>
- <div v-if="dateFilter==='custom'" class="card flex flex-wrap gap-3 items-center p-3"><input aria-label="Reporting start date" v-model="customStart" type="date" class="form-input !mt-0 max-w-[180px]"/><span class="text-orbyte-muted">to</span><input aria-label="Reporting end date" v-model="customEnd" type="date" class="form-input !mt-0 max-w-[180px]"/></div>
- <div class="grid grid-cols-1 gap-4 sm:grid-cols-3"><div v-for="s in summary" :key="s.label" class="card p-4 hover:shadow-cardhover"><div class="mb-2 flex h-9 w-9 items-center justify-center rounded-xl" :style="{backgroundColor:s.color+'18'}"><component :is="s.icon" class="w-5 h-5" :style="{color:s.color}"/></div><p class="text-xs text-orbyte-muted">{{s.label}}</p><p class="text-xl font-bold mt-1 break-words">{{s.value}}</p><p class="text-[10px] text-orbyte-muted mt-1">{{s.note}}</p></div></div>
- <AttentionQueue :limit="8" />
- <section class="card overflow-hidden"><div class="border-b border-orbyte-border px-5 py-4"><h3 class="font-semibold">Invoices</h3></div>
- <div class="flex flex-col gap-3 px-5 py-3 sm:flex-row"><div class="relative flex-1"><Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-orbyte-muted"/><input aria-label="Search invoices or customers" v-model="search" placeholder="Search invoice or customer..." class="form-input !mt-0 pl-9" /></div><select aria-label="Invoice status" v-model="statusFilter" class="form-input !mt-0 sm:w-auto"><option value="all">All Statuses</option><option value="paid">Paid</option><option value="pending">Pending</option><option value="overdue">Overdue</option></select><select aria-label="Sort invoices" v-model="sortBy" class="form-input !mt-0 sm:w-auto"><option value="dueDate">Sort: Due Date</option><option value="outstanding">Sort: Outstanding</option></select></div>
- <div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="border-b border-orbyte-border text-xs text-orbyte-muted"><th class="px-5 py-3">Invoice</th><th class="px-5 py-3">Customer</th><th class="px-5 py-3 text-right">Outstanding</th><th class="px-5 py-3">Due Date</th><th class="px-5 py-3">Status</th><th class="px-5 py-3">Action</th></tr></thead><tbody><tr v-for="i in pageData" :key="i.id" class="border-b border-orbyte-border last:border-0 cursor-pointer hover:bg-orbyte-bg/50" @click="openInvoice(i)"><td class="px-5 py-3 font-semibold">{{i.invoice_number}}</td><td class="px-5 py-3 text-orbyte-muted">{{i.customer?.name}}</td><td class="px-5 py-3 text-right font-medium">{{formatMYR(i.outstanding_balance)}}</td><td class="px-5 py-3 text-orbyte-muted">{{formatDate(i.due_date)}}</td><td class="px-5 py-3"><StatusBadge :status="i.status"/><span v-for="l in i.labels" :key="l" class="block mt-1 text-[10px] text-orbyte-muted">{{l}}</span></td><td class="px-5 py-3"><button class="inline-flex items-center gap-1 text-orbyte-button hover:underline text-xs" @click.stop="openInvoice(i)"><Eye class="w-4 h-4"/>View</button></td></tr><tr v-if="!pageData.length"><td colspan="6" class="p-6 text-center text-orbyte-muted">No invoices match your filters.</td></tr></tbody></table></div>
- <div class="flex items-center justify-between border-t border-orbyte-border px-5 py-3"><p class="text-xs text-orbyte-muted">Page {{Math.min(currentPage+1,pages)}} of {{pages}} · {{filtered.length}} invoices</p><div class="flex gap-1"><button aria-label="Previous page" class="outline-btn !p-2" :disabled="currentPage<=0" @click="currentPage--"><ChevronLeft class="w-4 h-4"/></button><button aria-label="Next page" class="outline-btn !p-2" :disabled="currentPage>=pages-1" @click="currentPage++"><ChevronRight class="w-4 h-4"/></button></div></div>
- </section>
- <details class="card overflow-hidden">
-  <summary class="cursor-pointer px-5 py-4 font-semibold">Customer priorities <span class="ml-2 text-xs font-normal text-orbyte-muted">Payment history and supporting evidence</span></summary>
- <section class="card overflow-hidden">
-  <div class="px-5 py-4 border-b border-orbyte-border flex flex-wrap items-start justify-between gap-3">
-    <div><h3 class="font-semibold">Customer Follow-Up Priorities <span class="ml-2 rounded-md bg-blue-50 text-blue-700 px-2 py-0.5 text-xs">Rule-based</span></h3>
-      <p class="text-xs text-orbyte-muted mt-1">Explainable, internal operational priorities — not credit scores. Does not override reminder approval.</p></div>
-    <p class="text-xs text-orbyte-muted">As of {{today}} · MYT demo clock</p>
-  </div>
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 border-b border-orbyte-border">
-    <div v-for="l in ['red','yellow','green','grey']" :key="l" class="rounded-xl bg-orbyte-bg/40 border border-orbyte-border px-3 py-2">
-      <p class="text-xs font-medium capitalize">{{l==='grey'?'Insufficient history':l==='red'?'Needs attention':l==='yellow'?'Follow-up due':'Routine monitoring'}}</p>
-      <p class="text-xl font-bold mt-1">{{priorityRecords.filter(p=>p.level===l).length}}</p>
+  <div class="space-y-6">
+    <!-- Context + period -->
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p class="text-sm text-slate-600">{{ currentBusiness?.name }} · as of {{ formatDate(today) }}</p>
+      <div class="inline-flex self-start rounded-lg border border-slate-200 bg-white p-1 sm:self-auto" role="tablist" aria-label="Reporting period">
+        <button
+          v-for="p in periods"
+          :key="p.id"
+          role="tab"
+          :aria-selected="period === p.id"
+          class="rounded-md px-3 py-1.5 text-xs font-medium transition"
+          :class="period === p.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'"
+          @click="period = p.id"
+        >
+          {{ p.label }}
+        </button>
+      </div>
     </div>
+
+    <!-- KPIs -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <RouterLink v-for="k in kpis" :key="k.label" :to="k.to" class="card group block p-5 transition hover:border-slate-300">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-medium text-slate-600">{{ k.label }}</p>
+          <ArrowRight class="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-500" />
+        </div>
+        <p class="mt-2 text-2xl font-semibold tracking-tight tabular-nums" :class="k.tone">{{ k.value }}</p>
+        <p class="mt-1 text-[13px] text-slate-500">{{ k.sub }}</p>
+      </RouterLink>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <!-- Today's priorities -->
+      <AttentionQueue :limit="5" class="xl:col-span-2" />
+
+      <!-- Customer health -->
+      <section class="card flex flex-col">
+        <header class="border-b border-slate-100 px-5 py-4">
+          <h2 class="text-base font-semibold text-slate-900">Customer health</h2>
+          <p class="mt-0.5 text-[13px] text-slate-500">{{ plural(priorities.length, 'customer') }} · rule-based, not a credit score</p>
+        </header>
+        <div class="space-y-4 px-5 py-4">
+          <div class="flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+            <div
+              v-for="l in levelCounts"
+              :key="l.id"
+              :class="l.color"
+              :style="{ width: priorities.length ? (l.count / priorities.length) * 100 + '%' : '0%' }"
+            ></div>
+          </div>
+          <ul class="space-y-2">
+            <li v-for="l in levelCounts" :key="l.id">
+              <RouterLink :to="`/customers?level=${l.id}`" class="flex items-center gap-2.5 rounded text-xs text-slate-700 hover:text-slate-900">
+                <span class="h-2.5 w-2.5 shrink-0 rounded-full" :class="l.color"></span>
+                <span>{{ l.label }}</span>
+                <span class="ml-auto font-semibold tabular-nums text-slate-900">{{ l.count }}</span>
+              </RouterLink>
+            </li>
+          </ul>
+        </div>
+        <div class="flex-1 border-t border-slate-100 px-5 py-4">
+          <p class="text-[13px] font-medium text-slate-500">Most urgent</p>
+          <ul class="mt-2 space-y-2.5">
+            <li v-for="p in topAttention" :key="p.customerId" class="min-w-0">
+              <span class="block truncate text-sm font-medium text-slate-900">{{ p.customerName }}</span>
+              <span class="block truncate text-[13px] text-slate-500">{{ formatShortPriorityReason(p, invoices) }}</span>
+            </li>
+            <li v-if="!topAttention.length" class="text-[13px] text-slate-500">No customers need urgent attention.</li>
+          </ul>
+        </div>
+        <RouterLink to="/customers" class="block border-t border-slate-100 px-5 py-3 text-center text-xs font-medium text-slate-600 hover:bg-slate-50">
+          View all customers
+        </RouterLink>
+      </section>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <!-- Overdue aging -->
+      <section class="card">
+        <header class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 class="text-base font-semibold text-slate-900">Overdue by age</h2>
+            <p class="mt-0.5 text-[13px] text-slate-500">{{ plural(overdueInvoices.length, 'overdue invoice') }} · {{ formatMYR(overdueTotal) }}</p>
+          </div>
+          <RouterLink to="/invoices?status=overdue" class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800">
+            Invoices <ArrowRight class="h-4 w-4" />
+          </RouterLink>
+        </header>
+        <ul class="space-y-4 px-5 py-5">
+          <li v-for="b in aging" :key="b.label">
+            <div class="flex items-baseline justify-between text-xs">
+              <span class="text-slate-700">{{ b.label }} <span class="text-slate-400">· {{ plural(b.count, 'invoice') }}</span></span>
+              <span class="font-semibold text-slate-900 tabular-nums">{{ formatMYR(b.amount) }}</span>
+            </div>
+            <div class="mt-1.5 h-2 rounded-full bg-slate-100">
+              <div class="h-2 rounded-full" :class="b.color" :style="{ width: b.pct + '%' }"></div>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- Payments -->
+      <section class="card">
+        <header class="border-b border-slate-100 px-5 py-4">
+          <h2 class="text-base font-semibold text-slate-900">Payments received</h2>
+          <p class="mt-0.5 text-[13px] text-slate-500">Last 30 days · {{ formatMYR(paymentsLast30) }}</p>
+        </header>
+        <div class="h-[232px] px-4 py-4">
+          <Bar :data="paymentsChart" :options="chartOptions" />
+        </div>
+      </section>
+    </div>
+
+
   </div>
-  <div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr class="border-b border-orbyte-border text-xs text-orbyte-muted"><th class="px-5 py-3">Customer</th><th class="px-5 py-3">Priority</th><th class="px-5 py-3">Evidence-based reason</th><th class="px-5 py-3">Review flags</th><th class="px-5 py-3">Details</th></tr></thead>
-   <tbody><template v-for="p in priorityList" :key="p.customerId"><tr class="border-b border-orbyte-border hover:bg-orbyte-bg/40">
-     <td class="px-5 py-3 font-medium">{{p.customerName}}</td>
-     <td class="px-5 py-3"><span class="rounded-full border px-2 py-1 text-xs font-semibold" :class="priorityBadge(p.level)">{{p.label}}</span></td>
-     <td class="px-5 py-3 text-orbyte-muted max-w-[360px]">{{p.reason}}</td>
-     <td class="px-5 py-3 text-xs"><span v-if="p.reviewFlags.length" class="text-amber-700 font-medium">Review required ({{p.reviewFlags.length}})</span><span v-else class="text-orbyte-muted">—</span></td>
-     <td class="px-5 py-3"><button class="outline-btn !py-1 !text-xs" @click="expandedPriority=expandedPriority===p.customerId?null:p.customerId">{{expandedPriority===p.customerId?'Hide':'Explain'}}</button></td>
-    </tr><tr v-if="expandedPriority===p.customerId" class="bg-orbyte-bg/50 border-b border-orbyte-border"><td colspan="5" class="px-5 py-4 text-xs space-y-2">
-      <p><strong>Evidence invoice numbers:</strong> {{priorityInvoiceRefs(p)}}</p><p><strong>Last 5 eligible settled:</strong> {{p.settledCount}} · <strong>Paid late:</strong> {{p.lateCount}}</p>
-      <p v-for="x in p.lastFiveSettled" :key="x.invoiceId" class="text-orbyte-muted">{{x.invoiceNumber}}: due {{x.dueDate}}, settled {{x.settledDate}} — {{x.late?`Late (${x.daysLate}d)`:'On time'}}</p>
-      <p v-for="flag in p.reviewFlags" :key="flag" class="text-amber-800">⚠ {{flag}}</p>
-      <p class="text-orbyte-muted">Calculation: {{p.calculatedAt}} · Rule version {{p.ruleVersion}} · Simulated records only</p>
-    </td></tr></template></tbody></table></div>
- </section>
- </details>
- <details class="card overflow-hidden">
-  <summary class="cursor-pointer px-5 py-4 font-semibold">Collection reports <span class="ml-2 text-xs font-normal text-orbyte-muted">Charts and overdue aging</span></summary>
-  <div class="space-y-4 border-t border-orbyte-border p-4">
- <div class="grid grid-cols-1 gap-4 lg:grid-cols-2"><div class="card p-5"><h3 class="font-semibold">Invoice Status Distribution</h3><p class="text-xs text-orbyte-muted mb-4">Current snapshot</p><div class="h-[240px]"><Doughnut :data="statusChart" :options="chartOptions" /></div></div><div class="card p-5"><h3 class="font-semibold">Payment Collection Trend</h3><p class="text-xs text-orbyte-muted mb-4">Recorded payments over time</p><div class="h-[240px]"><Line :data="trendChart" :options="chartOptions"/></div></div></div>
- <section class="card p-5"><h3 class="font-semibold mb-4">Overdue Invoice Aging</h3><div class="grid grid-cols-2 gap-3 lg:grid-cols-4"><div v-for="b in aging" :key="b.label" class="rounded-xl border border-orbyte-border bg-orbyte-bg/30 p-4"><p class="text-xs text-orbyte-muted">{{b.label}}</p><p class="text-2xl font-bold mt-1">{{b.count}}</p><p class="text-sm text-orbyte-muted">{{formatMYR(b.amount)}}</p></div></div></section>
-  </div>
- </details>
- <InvoiceDetailDrawer :invoice="selected" :open="drawerOpen" :seller-name="seller.name" :seller-role="seller.role" @close="drawerOpen=false"/>
-</div>
 </template>

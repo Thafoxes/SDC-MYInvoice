@@ -14,7 +14,7 @@ const formattedDate=computed(()=>new Date(props.simulatedDate+'T12:00:00').toLoc
 async function openNotification(n:Notification){ await markNotificationReadById(n.id); refreshStore();showNotifs.value=false;if(n.link==='action-center')router.push('/action-center'); }
 </script>
 <template>
-  <header class="sticky top-0 z-30 border-b border-orbyte-border bg-white/85 backdrop-blur-md">
+  <header class="sticky top-0 z-30 border-b border-orbyte-border bg-white">
     <div class="flex items-center justify-between px-6 py-3.5 lg:px-8 gap-3">
       <div class="pl-10 lg:pl-0"><div class="flex flex-wrap items-center gap-2.5"><h2 class="text-xl font-bold">{{route.meta.title}}</h2><span class="rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-700">DEMO MODE</span></div>
         <p class="text-sm text-orbyte-muted mt-0.5">{{route.meta.subtitle}}</p><p class="text-xs text-orbyte-muted mt-0.5">{{formattedDate}}</p>
