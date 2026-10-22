@@ -45,6 +45,8 @@ The authoritative order check runs again at approval. A resolved dispute can sti
 
 ## Checks near the feature
 
+PO document entry starts in [PurchaseOrderForm.vue](../src/components/PurchaseOrderForm.vue), with validation and totals in [purchaseOrder.ts](../src/lib/purchaseOrder.ts). The backend stores original bytes in SQLite `po_evidence`; uploads and OCR failures are covered by [purchase-order.test.cjs](../tests/purchase-order.test.cjs). Fresh application state is empty; synthetic data is test-only. See the [current workflow walkthrough](customer-order-workflow.md).
+
 - [customer-orders.test.cjs](../tests/customer-orders.test.cjs): phone lookup, dispute/settlement rules, order approval, migration and override behaviour; [logic.test.cjs](../tests/logic.test.cjs) retains the existing invoice checks.
 - [customer-orders-server.test.cjs](../tests/customer-orders-server.test.cjs): backend command boundaries and customer-document extraction.
 - [presentation.test.cjs](../tests/presentation.test.cjs): presentation regressions.

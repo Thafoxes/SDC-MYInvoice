@@ -19,6 +19,7 @@ const { getAttention } = require('../.server-build/lib/attention.js');
       telegram: async () => ({ message_id: 900 }),
       download: async () => fs.readFileSync(path.join(__dirname, 'fixtures', `transfer-receipt.${extension}`)),
     } });
+    require('./fixtures/load-business-data.cjs')(store);
     try {
       store.update(data => { data.customers.find(c => c.id === 'cust-06').telegram_chat_id = '123456'; });
       backend.db.prepare('INSERT INTO state VALUES (?, ?)').run('telegram-link:cust-06', '123456');

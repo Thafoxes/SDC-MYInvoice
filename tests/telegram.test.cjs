@@ -29,6 +29,7 @@ function fixture(t, options = {}) {
   process.env.RECEIPT_BENEFICIARY = 'Test Seller';
   const api = { telegram: async () => ({ message_id: 900 }), download: async id => Buffer.from('%PDF-1.7 ' + id), extract: async () => extraction(), ...options };
   const backend = createBackend({ directory, api });
+  require('./fixtures/load-business-data.cjs')(require('../.server-build/lib/store.js'));
   store.update(data => { data.customers.find(c => c.id === 'cust-06').telegram_chat_id = '123456'; });
   backend.db.prepare('INSERT INTO state VALUES (?, ?)').run('telegram-link:cust-06', '123456');
   t.after(() => {

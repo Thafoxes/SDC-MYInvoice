@@ -4,9 +4,11 @@ import type { Customer } from '@/types';
 import { DEMO_BUSINESS_ID, DEMO_SELLER_ID } from '@/lib/store';
 import { lookupCustomersByPhone } from '@/lib/customerOrders';
 import { backendEnabled, createCustomer, extractCustomerDocument } from '@/services/commands';
+import type { CustomerExtraction } from '@/lib/customerOrders';
 import { useDemoStore } from '@/composables/useDemoStore';
 
 const emit = defineEmits<{ selected: [id: string | null] }>();
+const props = defineProps<{ suggestion?: CustomerExtraction }>();
 const { data, refreshStore } = useDemoStore();
 const phone = ref('');
 const matches = ref<Customer[]>([]);
@@ -33,6 +35,19 @@ watch(phone, () => {
   emit('selected', null);
 });
 
+watch(() => props.suggestion, suggestion => {
+  if (!suggestion) return;
+  phone.value = suggestion.phone || '';
+}, { flush: 'sync' });
+
+watch(() => props.suggestion, suggestion => {
+  if (!suggestion) return;
+  Object.assign(form, { name: suggestion.name || '', phone: suggestion.phone || '', email: suggestion.email || '', address: suggestion.address || '' });
+  extracted.value = true;
+  reviewed.value = false;
+  notice.value = 'Buyer details suggested from the PO. Confirm the phone country code, then find the customer.';
+});
+
 function choose(id: string) {
   selected.value = id;
   emit('selected', id || null);
@@ -45,6 +60,10 @@ function search() {
     matches.value = lookupCustomersByPhone(phone.value, DEMO_BUSINESS_ID);
     searched.value = true;
     form.phone = phone.value;
+    if (!matches.value.length && props.suggestion) {
+      Object.assign(form, { name: props.suggestion.name || '', email: props.suggestion.email || '', address: props.suggestion.address || '' });
+      extracted.value = true;
+    }
     choose(matches.value.length === 1 ? matches.value[0]!.id : '');
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Enter a valid phone number.';
@@ -138,7 +157,7 @@ async function save() {
       <div class="grid gap-3 sm:grid-cols-2">
         <label class="text-sm font-medium text-slate-700">Company / customer name<input v-model.trim="form.name" class="form-input" autocomplete="organization" maxlength="120" required :disabled="busy" /></label>
         <label class="text-sm font-medium text-slate-700">Phone number<input v-model.trim="form.phone" class="form-input" type="tel" autocomplete="tel" required :disabled="busy" /></label>
-        <label class="text-sm font-medium text-slate-700">Billing email<input v-model.trim="form.email" class="form-input" type="email" autocomplete="email" maxlength="254" required :disabled="busy" /></label>
+        <label class="text-sm font-medium text-slate-700">Billing email (if available)<input v-model.trim="form.email" class="form-input" type="email" autocomplete="email" maxlength="254" :disabled="busy" /></label>
         <label class="text-sm font-medium text-slate-700">Address <span class="font-normal text-slate-500">(optional)</span><input v-model.trim="form.address" class="form-input" autocomplete="street-address" maxlength="500" :disabled="busy" /></label>
       </div>
       <label class="flex items-start gap-2 text-sm text-slate-700"><input v-model="reviewed" type="checkbox" class="mt-1" required :disabled="busy" /><span>{{ extracted ? 'I checked the extracted details against the original document.' : 'I checked the customer details and phone number.' }}</span></label>

@@ -2,7 +2,7 @@
   "document_lines": {
     "PHASE_1_2_CHANGELOG.md": 28,
     "README.md": 292,
-    "docs/customer-order-workflow.md": 64,
+    "docs/customer-order-workflow.md": 84,
     "docs/email-mvp-plan.md": 267,
     "index.html": 13,
     "replit.md": 82,
@@ -31,5 +31,5 @@
   ],
   "extraction": "AST plus document headings and literal code-path references",
   "host_session_tokens": null,
-  "generated_at": "2026-10-22T16:57:11.871074+00:00"
+  "generated_at": "2026-10-22T17:33:22.021759+00:00"
 }

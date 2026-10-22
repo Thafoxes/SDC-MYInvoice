@@ -1,5 +1,6 @@
-import type { Customer, OrderBlocker, PurchaseOrder } from '@/types';
+import type { Customer, OrderBlocker, PurchaseOrder, PurchaseOrderDetails } from '@/types';
 import { getStore, update, DEMO_BUSINESS_ID, computeInvoiceWithCustomer } from './store';
+import { validatePurchaseOrderDetails, purchaseOrderTotal } from './purchaseOrder';
 
 type Result = { success: boolean; error?: string; id?: string };
 export interface CustomerInput { name: string; phone: string; email: string; address?: string }
@@ -66,20 +67,38 @@ export function getOrderEligibility(customerId: string, businessId = DEMO_BUSINE
   return { allowed: blockers.length === 0, blockers };
 }
 
-export function createPurchaseOrder(customerId: string, reference: string, actorName: string, actorRole: string, businessId = DEMO_BUSINESS_ID): Result {
+export function createPurchaseOrder(customerId: string, reference: string, actorName: string, actorRole: string, businessId = DEMO_BUSINESS_ID, details?: PurchaseOrderDetails): Result {
   if (!permittedActor(actorName, actorRole, businessId)) return { success: false, error: 'Seller or staff authorization required' };
   if (!getStore().customers.some(c => c.id === customerId && c.business_id === businessId)) return { success: false, error: 'Customer not found for this business' };
   if (!boundedText(reference, 100) || !reference.trim()) return { success: false, error: 'Enter a PO reference (up to 100 characters)' };
   if (getStore().purchaseOrders.some(o => o.business_id === businessId && o.customer_id === customerId && o.reference.toLowerCase() === reference.trim().toLowerCase()))
     return { success: false, error: 'This customer already has an order with this PO reference' };
+  let confirmed: PurchaseOrderDetails | undefined;
+  try { if (details !== undefined) confirmed = validatePurchaseOrderDetails(details); } catch (error) { return { success: false, error: (error as Error).message }; }
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   update(data => {
-    data.purchaseOrders.unshift({ id, business_id: businessId, customer_id: customerId, reference: reference.trim(), status: 'draft', created_at: now });
+    data.purchaseOrders.unshift({ id, business_id: businessId, customer_id: customerId, reference: reference.trim(), status: 'draft', created_at: now, ...(confirmed ? { details: confirmed } : {}) });
     data.activityEvents.unshift({ id: crypto.randomUUID(), business_id: businessId, invoice_id: null, event_type: 'purchase_order_received',
       actor: actorName, actor_role: actorRole, description: `Buyer PO ${reference.trim()} recorded; processing approval pending`, metadata: { order_id: id, customer_id: customerId }, created_at: now });
   });
   return { success: true, id };
+}
+
+export function updatePurchaseOrder(orderId: string, reference: string, details: PurchaseOrderDetails, actorName: string, actorRole: string, businessId = DEMO_BUSINESS_ID): Result {
+  if (!permittedActor(actorName, actorRole, businessId)) return { success: false, error: 'Seller or staff authorization required' };
+  const order = getStore().purchaseOrders.find(o => o.id === orderId && o.business_id === businessId);
+  if (!order || order.status !== 'draft') return { success: false, error: 'Only a draft PO in this business can be edited' };
+  if (!boundedText(reference, 100) || !reference.trim()) return { success: false, error: 'Enter a PO reference' };
+  if (getStore().purchaseOrders.some(o => o.id !== orderId && o.business_id === businessId && o.customer_id === order.customer_id && o.reference.toLowerCase() === reference.trim().toLowerCase())) return { success: false, error: 'Duplicate PO reference for this customer' };
+  let confirmed: PurchaseOrderDetails;
+  try { confirmed = validatePurchaseOrderDetails(details); } catch (error) { return { success: false, error: (error as Error).message }; }
+  update(data => {
+    Object.assign(data.purchaseOrders.find(o => o.id === orderId)!, { reference: reference.trim(), details: confirmed });
+    data.activityEvents.unshift({ id: crypto.randomUUID(), business_id: businessId, invoice_id: null, event_type: 'purchase_order_updated', actor: actorName, actor_role: actorRole,
+      description: `PO ${reference.trim()} details updated`, metadata: { order_id: orderId, customer_id: order.customer_id }, created_at: new Date().toISOString() });
+  });
+  return { success: true, id: orderId };
 }
 
 export function approvePurchaseOrder(orderId: string, actorName: string, actorRole: string, businessId = DEMO_BUSINESS_ID, overrideReason?: string): Result {
@@ -87,6 +106,8 @@ export function approvePurchaseOrder(orderId: string, actorName: string, actorRo
   const order = getStore().purchaseOrders.find(o => o.id === orderId && o.business_id === businessId);
   if (!order) return { success: false, error: 'Order not found for this business' };
   if (order.status !== 'draft') return { success: false, error: 'This order has already been approved' };
+  if (order.details?.items.length && order.details.document_total !== null && Math.round(purchaseOrderTotal(order.details.items)! * 100) !== Math.round(order.details.document_total * 100))
+    return { success: false, error: 'The line items do not match the printed total. Review the PO details before approval.' };
   if (!getStore().customers.some(c => c.id === order.customer_id && c.business_id === businessId)) return { success: false, error: 'Order customer no longer exists in this business' };
   const eligibility = getOrderEligibility(order.customer_id, businessId);
   if (!eligibility.allowed && (!boundedText(overrideReason, 500) || !overrideReason.trim()))

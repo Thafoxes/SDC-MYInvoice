@@ -79,11 +79,46 @@ export interface PurchaseOrder {
   business_id: string;
   customer_id: string;
   reference: string;
+  details?: PurchaseOrderDetails;
   status: 'draft' | 'approved';
   created_at: string;
   approved_at?: string;
   approved_by?: string;
   override?: { reason: string; actor: string; approved_at: string; blockers: OrderBlocker[] };
+}
+
+export interface PurchaseOrderItem {
+  name: string;
+  code: string;
+  quantity: number | null;
+  unit_price: number | null;
+  discount: number | null;
+}
+
+export interface PurchaseOrderDetails {
+  order_date: string;
+  delivery_date: string;
+  currency: string;
+  buyer_name: string;
+  buyer_address: string;
+  buyer_phone: string;
+  buyer_email: string;
+  supplier_name: string;
+  supplier_address: string;
+  supplier_phone: string;
+  supplier_email: string;
+  delivery_address: string;
+  delivery_phone: string;
+  attention: string;
+  payment_terms: string;
+  requested_by: string;
+  document_approved_by: string;
+  department: string;
+  document_status: string;
+  notes: string;
+  items: PurchaseOrderItem[];
+  document_total: number | null;
+  evidence_id?: string;
 }
 
 export interface Credit {

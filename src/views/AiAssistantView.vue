@@ -8,14 +8,14 @@ import { formatDateTime } from '@/lib/format';
 const {data,refreshStore}=useDemoStore();
 const input=ref(''),loading=ref(false),scrollArea=ref<HTMLElement|null>(null);
 const messages=computed(()=>data.value.aiConversations.filter(m=>m.business_id===DEMO_BUSINESS_ID));
-const prompts=['Which invoices are overdue?','Who owes me the most money?','Which customers need follow-up today?',"Summarize this week's overdue invoices.",'Draft a reminder for invoice INV-1006.','Summarize my pending invoices.'];
+const prompts=['Which invoices are overdue?','Who owes me the most money?','Which customers need follow-up today?',"Summarize this week's overdue invoices.",'Draft a reminder for an eligible invoice.','Summarize my pending invoices.'];
 async function scrollDown(){await nextTick();if(scrollArea.value)scrollArea.value.scrollTop=scrollArea.value.scrollHeight;}
 async function send(text:string){
  const question=text.trim();if(!question||loading.value)return;
  loading.value=true;input.value='';
  try {
   await addAiMessage(DEMO_BUSINESS_ID,DEMO_SELLER_ID,'user',question);refreshStore();void scrollDown();
-  const res=await askAiAssistant(question,DEMO_BUSINESS_ID,'Kedai Maju Jaya');
+  const res=await askAiAssistant(question,DEMO_BUSINESS_ID,data.value.businesses.find(b=>b.id===DEMO_BUSINESS_ID)?.name || 'My business');
   await addAiMessage(DEMO_BUSINESS_ID,DEMO_SELLER_ID,'assistant',res.answer);
  } catch { /* The shared API banner reports connection and inference errors. */ }
  finally {loading.value=false;refreshStore();void scrollDown();}

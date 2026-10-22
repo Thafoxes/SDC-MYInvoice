@@ -4,7 +4,7 @@ const store = require('../.test-build/lib/store.js');
 const orders = require('../.test-build/lib/customerOrders.js');
 const actions = require('../.test-build/lib/actions.js');
 const seller = 'Siti Aishah', staff = 'Tan Wei Long', biz = 'biz-001';
-const reset = () => store.resetStore();
+const reset = () => require('./fixtures/load-business-data.cjs')(store);
 const createOrder = (customer = 'cust-03', reference = 'BUYER-PO-1') => orders.createPurchaseOrder(customer, reference, staff, 'staff', biz);
 
 test('phone lookup normalizes Malaysian formats and requires explicit international country codes', () => {

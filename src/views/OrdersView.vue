@@ -2,10 +2,13 @@
 import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import CustomerIntake from '@/components/CustomerIntake.vue';
+import PurchaseOrderForm from '@/components/PurchaseOrderForm.vue';
+import type { PurchaseOrderDetails } from '@/types';
+import type { CustomerExtraction } from '@/lib/customerOrders';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { DEMO_BUSINESS_ID, DEMO_SELLER_ID } from '@/lib/store';
 import { getOrderEligibility } from '@/lib/customerOrders';
-import { approvePurchaseOrder, createPurchaseOrder } from '@/services/commands';
+import { approvePurchaseOrder, createPurchaseOrder, updatePurchaseOrder } from '@/services/commands';
 import { formatMYR } from '@/lib/format';
 
 const { data, refreshStore } = useDemoStore();
@@ -17,7 +20,9 @@ const eligibility = computed(() => {
   return customerId.value ? getOrderEligibility(customerId.value, DEMO_BUSINESS_ID) : null;
 });
 const orders = computed(() => data.value.purchaseOrders.filter(order => order.business_id === DEMO_BUSINESS_ID));
-const reference = ref('');
+const suggestion = ref<CustomerExtraction>();
+const formDirty = ref(false);
+const savedRevision = ref(0);
 const intakeKey = ref(0);
 const reason = ref('');
 const activeOrderId = ref('');
@@ -35,7 +40,6 @@ function selectCustomer(id: string | null) {
   customerId.value = id;
   activeOrderId.value = '';
   reason.value = '';
-  reference.value = '';
   error.value = '';
   notice.value = '';
 }
@@ -46,20 +50,22 @@ function openOrder(id: string) {
   intakeKey.value += 1;
   selectCustomer(order.customer_id);
   activeOrderId.value = id;
-  reference.value = order.reference;
 }
 
-async function saveDraft() {
+async function saveDraft(reference: string, details: PurchaseOrderDetails) {
   if (!customerId.value || busy.value) return;
   busy.value = true;
   error.value = '';
   notice.value = '';
   try {
-    const result = await createPurchaseOrder(customerId.value, reference.value, actor.value.name, actor.value.role, DEMO_BUSINESS_ID);
+    const result = activeOrderId.value
+      ? await updatePurchaseOrder(activeOrderId.value, reference, details, actor.value.name, actor.value.role, DEMO_BUSINESS_ID)
+      : await createPurchaseOrder(customerId.value, reference, actor.value.name, actor.value.role, DEMO_BUSINESS_ID, details);
     if (!result.success || !result.id) throw new Error(result.error || 'Could not save PO.');
     activeOrderId.value = result.id;
     refreshStore();
-    notice.value = 'PO reference saved as a draft. Review eligibility before approval.';
+    savedRevision.value += 1;
+    notice.value = 'PO details saved. Review eligibility before approval.';
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not save PO.';
   } finally { busy.value = false; }
@@ -89,7 +95,8 @@ function customerName(id: string) {
 <template>
   <div class="space-y-5">
     <p class="text-sm text-slate-600">Find the buyer, review previous disputes, then accept their PO. A held order can remain saved as a draft.</p>
-    <CustomerIntake :key="intakeKey" @selected="selectCustomer" />
+    <div class="flex justify-end"><button type="button" class="outline-btn" :disabled="busy" @click="selectCustomer(null); intakeKey += 1; savedRevision += 1">Start another PO</button></div>
+    <CustomerIntake :key="intakeKey" :suggestion="suggestion" @selected="selectCustomer" />
     <section v-if="customer && eligibility" class="card p-4 sm:p-5 space-y-4" aria-label="Order eligibility">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div><h2 class="text-base font-semibold text-slate-900">{{ customer.name }}</h2><p class="mt-1 text-sm text-slate-600">{{ customer.phone }} · {{ customer.email || 'No billing email' }}</p></div>
@@ -102,16 +109,13 @@ function customerName(id: string) {
           <li v-for="blocker in eligibility.blockers" :key="blocker.invoice_id"><strong>{{ blocker.invoice_number }}</strong> · {{ formatMYR(blocker.balance) }} outstanding<br />{{ blocker.reason }}</li>
         </ul>
       </div>
-      <form v-if="!activeOrder" class="flex flex-col sm:flex-row sm:items-end gap-3" @submit.prevent="saveDraft">
-        <label class="flex-1 text-sm font-medium text-slate-700">Buyer PO reference<input v-model.trim="reference" required maxlength="100" class="form-input" placeholder="e.g. PO-2026-001" :disabled="busy" /></label>
-        <button type="submit" class="primary-btn" :disabled="busy">Save draft PO</button>
-      </form>
-      <div v-else class="border-t border-slate-100 pt-4 space-y-3">
+      <div v-if="activeOrder" class="border-t border-slate-100 pt-4 space-y-3">
         <p class="text-sm text-slate-700"><strong>{{ activeOrder.reference }}</strong> · {{ activeOrder.status === 'approved' ? 'Approved' : 'Draft — awaiting approval' }}</p>
         <form v-if="activeOrder.status === 'draft'" class="space-y-3" @submit.prevent="approve">
           <label v-if="!eligibility.allowed && actor.role === 'seller'" class="block text-sm font-medium text-slate-700">Reason for allowing this order<textarea v-model.trim="reason" required maxlength="500" rows="3" class="form-input" placeholder="Explain why this specific PO can proceed despite the hold." :disabled="busy" /></label>
           <p v-if="actor.role !== 'seller'" class="text-sm text-amber-800">Only a seller can approve an order or override. Ask the seller to review this draft.</p>
-          <button type="submit" class="primary-btn" :disabled="busy || actor.role !== 'seller' || (!eligibility.allowed && !reason.trim())">{{ eligibility.allowed ? 'Approve order' : 'Approve this PO with override' }}</button>
+          <p v-if="formDirty" class="text-sm text-amber-800">Save the edited PO details before approval.</p>
+          <button type="submit" class="primary-btn" :disabled="busy || formDirty || actor.role !== 'seller' || (!eligibility.allowed && !reason.trim())">{{ eligibility.allowed ? 'Approve order' : 'Approve this PO with override' }}</button>
         </form>
         <div v-if="activeOrder.override" class="rounded-lg bg-slate-50 p-3 text-sm text-slate-700 space-y-1">
           <p class="font-semibold">Seller override for this order</p>
@@ -123,8 +127,9 @@ function customerName(id: string) {
       <p v-if="error" role="alert" class="text-sm text-rose-700">{{ error }}</p>
       <p v-if="notice" role="status" class="text-sm text-emerald-700">{{ notice }}</p>
     </section>
+    <PurchaseOrderForm :order="activeOrder" :customer="customer" :saving="busy" :saved-revision="savedRevision" @save="saveDraft" @buyer="suggestion = $event" @dirty="formDirty = $event" />
     <section class="card overflow-hidden" aria-label="Saved purchase orders">
-      <div class="px-4 py-3 border-b border-slate-100"><h2 class="text-base font-semibold text-slate-900">Saved purchase orders</h2><p class="mt-1 text-xs text-slate-500">This proof of concept records buyer PO references; it does not issue purchase orders.</p></div>
+      <div class="px-4 py-3 border-b border-slate-100"><h2 class="text-base font-semibold text-slate-900">Saved purchase orders</h2><p class="mt-1 text-xs text-slate-500">Buyer PO details and original evidence, with a separate processing approval.</p></div>
       <ul class="divide-y divide-slate-100">
         <li v-for="order in orders" :key="order.id" class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div class="text-sm"><strong>{{ order.reference }}</strong><p class="text-slate-600">{{ customerName(order.customer_id) }} · {{ order.status }}{{ order.override ? ' · Seller override' : '' }}</p></div>

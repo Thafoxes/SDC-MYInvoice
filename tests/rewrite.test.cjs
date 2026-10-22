@@ -22,6 +22,7 @@ function fixture(t, chat) {
   const prompts = [];
   const api = { telegram: async () => ({}), download: async () => Buffer.from(''), extract: async () => ({}), chat: async messages => { prompts.push(messages); return chat(messages); } };
   const backend = createBackend({ directory, api });
+  require('./fixtures/load-business-data.cjs')(require('../.server-build/lib/store.js'));
   t.after(() => { backend.stop(); backend.db.close(); fs.rmSync(directory, { recursive: true }); });
   return { backend, prompts };
 }

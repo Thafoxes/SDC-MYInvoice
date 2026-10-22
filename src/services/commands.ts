@@ -2,6 +2,7 @@ import { ref } from 'vue';
 import * as actions from '@/lib/actions';
 import * as store from '@/lib/store';
 import * as customerOrders from '@/lib/customerOrders';
+import type { PurchaseOrderDetails } from '@/types';
 import { runInvoiceCheck as localCheck } from '@/lib/reminderEngine';
 import { askAiAssistant as localAssistant } from '@/lib/aiService';
 import { refreshStore } from '@/composables/useDemoStore';
@@ -60,8 +61,9 @@ export const recordPayment = command('recordPayment', actions.recordPayment);
 export const setCustomerLanguage = command('setCustomerLanguage', actions.setCustomerLanguage);
 export const createCustomer = command('createCustomer', customerOrders.createCustomer);
 export const createPurchaseOrder = command('createPurchaseOrder', customerOrders.createPurchaseOrder);
+export const updatePurchaseOrder = command('updatePurchaseOrder', customerOrders.updatePurchaseOrder);
 export const approvePurchaseOrder = command('approvePurchaseOrder', customerOrders.approvePurchaseOrder);
-export async function extractCustomerDocument(file: File, actorRole = 'seller'): Promise<customerOrders.CustomerExtraction> {
+async function uploadDocument(file: File, actorRole: string, endpoint: string) {
   if (!backendEnabled) throw new Error('Enable backend mode to read documents, or enter the customer manually.');
   if (!file.size || file.size > 10 * 1024 * 1024) throw new Error('Choose a non-empty PDF, JPG or PNG up to 10 MB.');
   const content = await new Promise<string>((resolve, reject) => {
@@ -71,13 +73,25 @@ export async function extractCustomerDocument(file: File, actorRole = 'seller'):
     reader.onabort = () => reject(new Error('File reading was cancelled.'));
     reader.readAsDataURL(file);
   });
-  const response = await fetch('/api/customer-document', { method: 'POST',
+  const response = await fetch(endpoint, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Nudgewise-Local': '1' },
     body: JSON.stringify({ name: file.name, content, actorRole }) });
   checkAccess(response);
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || 'Document extraction failed. Enter details manually or try another file.');
   return body.result;
+}
+export function extractCustomerDocument(file: File, actorRole = 'seller'): Promise<customerOrders.CustomerExtraction> {
+  return uploadDocument(file, actorRole, '/api/customer-document');
+}
+export interface PurchaseOrderExtraction {
+  reference: string;
+  details: PurchaseOrderDetails;
+  evidence: { id: string; filename: string; content_type: string; size: number; sha256: string };
+  extraction_error?: string;
+}
+export function extractPurchaseOrderDocument(file: File, actorRole = 'seller'): Promise<PurchaseOrderExtraction> {
+  return uploadDocument(file, actorRole, '/api/purchase-order-document');
 }
 export const runInvoiceCheck = command('runInvoiceCheck', localCheck);
 export const setDemoDate = command('setDemoDate', store.setDemoDate);

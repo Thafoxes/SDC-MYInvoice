@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const customerOrders = require('../.server-build/lib/customerOrders.js');
 const { DatabaseSync } = require('node:sqlite');
 const { createServer } = require('node:http');
@@ -20,15 +20,33 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
   db.exec(`PRAGMA journal_mode=WAL;
     CREATE TABLE IF NOT EXISTS state (id TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS receipts (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS sent (id TEXT PRIMARY KEY, payload TEXT NOT NULL);`);
+    CREATE TABLE IF NOT EXISTS sent (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS po_evidence (id TEXT PRIMARY KEY, business_id TEXT NOT NULL, filename TEXT NOT NULL,
+      content_type TEXT NOT NULL, bytes BLOB NOT NULL, sha256 TEXT NOT NULL, created_at TEXT NOT NULL,
+      UNIQUE(business_id, sha256));`);
   const get = db.prepare('SELECT value FROM state WHERE id = ?');
   const put = db.prepare('INSERT INTO state VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value');
+  const oldState = get.get('nudgewise-demo-v1.1')?.value;
+  const clearingSamples = oldState && !JSON.parse(oldState).sample_data_removed;
   store.configureStorage({ getItem: key => get.get(key)?.value ?? null, setItem: (key, value) => put.run(key, value) });
   store.getStore();
   const businessId = process.env.TELEGRAM_BUSINESS_ID || store.DEMO_BUSINESS_ID;
   const list = table => db.prepare(`SELECT payload FROM ${table}`).all().map(row => JSON.parse(row.payload));
   const receipts = () => list('receipts');
   const sent = () => list('sent');
+  if (clearingSamples || (get.get('nudgewise-demo-v1.1-before-sample-cleanup') && !get.get('sample-cleanup:attachments'))) {
+    if (!get.get('before-sample-cleanup:receipts')) put.run('before-sample-cleanup:receipts', JSON.stringify(receipts()));
+    if (!get.get('before-sample-cleanup:sent')) put.run('before-sample-cleanup:sent', JSON.stringify(sent()));
+    const remaining = store.getStore();
+    for (const table of ['receipts', 'sent']) {
+      for (const record of db.prepare(`SELECT id, payload FROM ${table}`).all()) {
+        const row = JSON.parse(record.payload);
+        if ((row.invoice_id && !remaining.invoices.some(i => i.id === row.invoice_id))
+          || (row.customer_id && !remaining.customers.some(c => c.id === row.customer_id))) db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(record.id);
+      }
+    }
+    put.run('sample-cleanup:attachments', 'complete');
+  }
   const saveReceipt = receipt => db.prepare('INSERT INTO receipts VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(receipt.id, JSON.stringify(receipt));
   const timezone = store.getStore().businesses.find(b => b.id === businessId)?.timezone || 'Asia/Kuala_Lumpur';
   function monitor() {
@@ -185,8 +203,11 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
   }
 
   const commands = {
-    ...Object.fromEntries(['createCustomer', 'createPurchaseOrder', 'approvePurchaseOrder'].map(name => [name, (...args) => {
-      if (args[name === 'createPurchaseOrder' ? 4 : 3] !== businessId) return { success: false, error: 'Business does not match this workspace' };
+    ...Object.fromEntries(['createCustomer', 'createPurchaseOrder', 'updatePurchaseOrder', 'approvePurchaseOrder'].map(name => [name, (...args) => {
+      const businessIndex = name === 'updatePurchaseOrder' ? 5 : name === 'createPurchaseOrder' ? 4 : 3;
+      if (args[businessIndex] !== businessId) return { success: false, error: 'Business does not match this workspace' };
+      const evidenceId = (name === 'createPurchaseOrder' ? args[5] : name === 'updatePurchaseOrder' ? args[2] : null)?.evidence_id;
+      if (evidenceId && !db.prepare('SELECT id FROM po_evidence WHERE id = ? AND business_id = ?').get(evidenceId, businessId)) return { success: false, error: 'PO evidence not found in this workspace' };
       return customerOrders[name](...args);
     }])),
     ...Object.fromEntries(['approveFollowUp', 'rejectFollowUp', 'editFollowUpMessage', 'resolveVerificationHold', 'resolveDispute', 'confirmPromise', 'reviewCustomerPromise', 'simulateCustomerResponse', 'recordPayment', 'setCustomerLanguage'].map(key => [key, actions[key]])),
@@ -248,6 +269,14 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
       if (req.headers.origin && !sameOrigin && !origins.has(req.headers.origin)) return json(403, { error: 'Origin not allowed' });
       if (!await accessGuard(req, res, json)) return;
       if (req.method === 'GET' && req.url === '/api/state') return json(200, { data: snapshot(), integration: { model: process.env.OLLAMA_MODEL || 'gemma4:31b', botConfigured: !!process.env.TELEGRAM_BOT_TOKEN, pollingError, lastPollAt, receivingAccountName: process.env.RECEIPT_BENEFICIARY || '' } });
+      const evidenceId = /^\/api\/po-evidence\/([a-f0-9-]{36})$/.exec(req.url || '')?.[1];
+      if (req.method === 'GET' && evidenceId) {
+        const evidence = db.prepare('SELECT * FROM po_evidence WHERE id = ? AND business_id = ?').get(evidenceId, businessId);
+        if (!evidence) return json(404, { error: 'PO evidence unavailable' });
+        res.writeHead(200, { 'Content-Type': evidence.content_type, 'Content-Disposition': `inline; filename="purchase-order.${evidence.content_type === 'application/pdf' ? 'pdf' : evidence.content_type === 'image/png' ? 'png' : 'jpg'}"`,
+          'Content-Length': evidence.bytes.length, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox; default-src 'none'" });
+        return res.end(Buffer.from(evidence.bytes));
+      }
       const attachmentId = /^\/api\/receipts\/(tg-\d+)\/file$/.exec(req.url || '')?.[1];
       if (req.method === 'GET' && attachmentId) {
         const r = receipts().find(x => x.id === attachmentId && x.business_id === businessId);
@@ -255,7 +284,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
         const bytes = fs.readFileSync(path.join(directory, `${r.id}.${r.extension}`));
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${r.id}.${r.extension}"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end(bytes);
       }
-      if (req.method === 'POST' && req.url === '/api/customer-document') {
+      if (req.method === 'POST' && ['/api/customer-document', '/api/purchase-order-document'].includes(req.url)) {
         if (req.headers['x-nudgewise-local'] !== '1' || !req.headers['content-type']?.startsWith('application/json')) return json(403, { error: 'Local JSON upload required' });
         const maxBytes = 10 * 1024 * 1024;
         const maxBody = 4 * Math.ceil(maxBytes / 3) + 4096;
@@ -273,12 +302,29 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
         if (bytes.toString('base64') !== upload.content) return json(400, { error: 'Invalid document encoding' });
         if (bytes.length > maxBytes) return json(413, { error: 'Document exceeds 10 MB' });
         const extension = integrations.fileExtension(bytes);
+        const isPO = req.url === '/api/purchase-order-document';
+        let evidence;
+        if (isPO) {
+          const hash = createHash('sha256').update(bytes).digest('hex');
+          const existing = db.prepare('SELECT id, filename, content_type, sha256 FROM po_evidence WHERE business_id = ? AND sha256 = ?').get(businessId, hash);
+          evidence = existing || { id: randomUUID(), filename: path.basename(upload.name), content_type: extension === 'pdf' ? 'application/pdf' : `image/${extension === 'jpg' ? 'jpeg' : 'png'}`, sha256: hash };
+          if (!existing) db.prepare('INSERT INTO po_evidence VALUES (?, ?, ?, ?, ?, ?, ?)').run(evidence.id, businessId, evidence.filename, evidence.content_type, bytes, hash, new Date().toISOString());
+          evidence = { ...evidence, size: bytes.length };
+        }
         const tempDirectory = fs.mkdtempSync(path.join(directory, 'customer-'));
         const filename = path.join(tempDirectory, `document.${extension}`);
         let result;
         try {
           fs.writeFileSync(filename, bytes, { mode: 0o600 });
-          result = integrations.validateCustomerExtraction(await api.extractCustomer(filename));
+          if (isPO) {
+            try {
+              const extracted = await api.extractPurchaseOrder(filename);
+              result = { ...integrations.validatePurchaseOrderExtraction({ reference: extracted.reference, ...extracted.details }), evidence };
+            } catch (error) {
+              result = { reference: '', details: require('../.server-build/lib/purchaseOrder.js').emptyPurchaseOrderDetails(), evidence,
+                extraction_error: 'Could not read all PO fields. Original evidence is saved; enter or correct the details manually.' };
+            }
+          } else result = integrations.validateCustomerExtraction(await api.extractCustomer(filename));
         } finally {
           fs.rmSync(filename, { force: true });
           fs.rmdirSync(tempDirectory);
@@ -288,7 +334,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
       if (req.method !== 'POST' || req.url !== '/api/command') return json(404, { error: 'Not found' });
       if (req.headers['x-nudgewise-local'] !== '1' || !req.headers['content-type']?.startsWith('application/json')) return json(403, { error: 'Local JSON command required' });
       let raw = '';
-      for await (const chunk of req) { raw += chunk; if (raw.length > 32000) return json(413, { error: 'Request too large' }); }
+      for await (const chunk of req) { raw += chunk; if (raw.length > 128000) return json(413, { error: 'Request too large' }); }
       const { name, args } = JSON.parse(raw);
       if (typeof name !== 'string' || !Array.isArray(args) || args.length > 8) return json(400, { error: 'Invalid command' });
       monitor();

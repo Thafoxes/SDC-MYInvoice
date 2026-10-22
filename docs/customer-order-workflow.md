@@ -1,6 +1,24 @@
 # Customer lookup and purchase-order approval
 
-Implemented for the synthetic seller demo. Start in **Customers** to find or add a customer, or **Purchase orders** to review and approve an incoming buyer PO reference. This records the buyer's PO; it does not issue one or upload the full order document into a permanent evidence store.
+Implemented for the seller proof of concept. Start in **Customers** to find or add a customer, or **Purchase orders** to upload, review, save and approve an incoming buyer PO. It records the buyer's document rather than issuing one.
+
+## Empty workspace and recovery
+
+The app starts without sample customers, invoices, payments, orders, messages or notifications. Resetting returns to an empty workspace. The minimum workspace/seller configuration remains so the app can operate. Synthetic regression records live only in `tests/fixtures/business-data.json` and are loaded explicitly by tests.
+
+On the first upgrade, known sample IDs and their linked transactions are removed; manually created customers and orders are retained. A recovery copy of the prior state is stored under `nudgewise-demo-v1.1-before-sample-cleanup` in the browser or backend state table. The existing local database was also backed up under `.local-data/backups/` before cleanup. Do not commit backups or original business documents.
+
+## Full PO entry and original evidence
+
+Upload a PNG, JPG or PDF in **Purchase orders**, or enter the fields manually. OCR proposes the reference, dates, buyer/supplier contacts and addresses, delivery instructions, terms, requested-by/approved-by names, department, notes, line items and printed total when visible. Buyer and supplier are distinct: a supplier email is not a customer billing email.
+
+The original file bytes are stored in SQLite's `po_evidence` BLOB table with a SHA-256 hash, filename, content type, business and upload time. Repeated uploads of identical bytes reuse the evidence record within that business. Saving the PO links its evidence ID; use **Open original PO evidence** after reopening the order. The original remains unchanged when reviewed fields are corrected. It is not included in browser state snapshots.
+
+PO extraction enables Docling table recognition. Duplicate item rows are retained. Check each quantity, price and discount (an amount per line), and explicitly confirm the three-letter currency. A bare `$` does not establish USD. Calculated totals use rounded line values; a disagreement with the entered printed total prevents processing approval until corrected. A printed status such as “Closed Completed” or an approver's name is source text, not NudgeWise approval.
+
+All fields remain editable on a draft; save changes before approval. Approved POs are read only. If AI extraction fails, the original is still retained and a manual-entry path is shown. The current worker is limited to five pages and 10 MiB. It may miss a footer total or other text, so missing fields must be confirmed manually.
+
+The supplied `tests/fixtures/PO.png` was checked with real local OCR and the approved Ollama cloud model: reference PO00495, distinct buyer/supplier and seven item rows were extracted. Currency remained unknown and the footer total was not extracted. The line items calculate to 228.47.
 
 ## Find or add a customer
 
@@ -30,13 +48,12 @@ The exception applies to that order only. It never clears invoice disputes, chan
 
 ## Try the demo
 
-1. Open **Purchase orders** and search `0133456789` (ABC Trading).
-2. Review the hold for disputed invoice `INV-1013`.
-3. Save a buyer PO reference, such as `PO-DEMO-001`.
-4. Enter an override reason and approve this PO. Review the recorded exception.
-5. Create a second PO for the customer: it still requires settlement or another seller decision.
-6. Use the existing invoice drawer to record a synthetic settlement and resolve the dispute, then review eligibility again.
-7. Try an unused phone to add a synthetic customer manually, or read a synthetic business document with the backend enabled.
+1. Open **Purchase orders** and upload a PO; review the original and proposed fields.
+2. Choose **Use these buyer details to find or add customer**, confirm the phone country code, and find the customer.
+3. Review or add the customer. Email is optional when it is absent from the document.
+4. Correct the PO fields, line items, printed total and currency; confirm review and save the draft.
+5. Review eligibility and approve processing. A hold requires settlement/resolution or a reasoned seller exception for that PO.
+6. Reopen the saved order and open its original evidence. An exception does not release old invoice holds or future orders.
 
 ## Run and verify
 
@@ -46,6 +63,7 @@ The exception applies to that order only. It never clears invoice disputes, chan
 - Existing backend polling starts if a Telegram token is configured. To run this proof of concept without Telegram activity, leave `TELEGRAM_BOT_TOKEN` empty in the environment used for the backend. Email replacement remains a separate planned change.
 - `npm run test:logic`: existing invoice/language checks plus phone, duplicate, hold, migration, scope, and override tests.
 - `npm run test:customers`: mocked customer OCR and backend approval tests, including bounded file validation and cleanup. No paid model calls.
+- `npm run test:po`: empty-start/sample-cleanup checks, exact PNG evidence retention across restart, extraction failure, business isolation, numeric validation and draft/approval checks.
 - `npm run build`: application typecheck and production build.
 
 This remains a shared-access demo: role/name checks enforce the simulated business rules but do not authenticate a real seller. Do not use genuine business/customer records or treat an override as production authorization.
@@ -56,6 +74,8 @@ This remains a shared-access demo: role/name checks enforce the simulated busine
 - `src/lib/store.ts`: backward-compatible state migration and business-scoped balance calculations.
 - `src/components/CustomerIntake.vue`: shared customer lookup and reviewed contact form.
 - `src/views/OrdersView.vue`: order holds, draft references, approval and exception display.
+- `src/components/PurchaseOrderForm.vue`: complete editable PO form, upload, evidence link and item table.
+- `src/lib/purchaseOrder.ts`: PO field validation and line/total calculations.
 - `src/services/commands.ts`: local/backend transport, independent backend setting, document upload helper.
 - `server/app.cjs`: bounded document intake and business-scoped command routing.
 - `server/integrations.cjs`: OCR + model customer extraction and output validation.

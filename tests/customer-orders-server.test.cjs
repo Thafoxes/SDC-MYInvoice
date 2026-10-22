@@ -20,6 +20,7 @@ function request(backend, url, body, headers = {}) {
 function fixture(t, extractCustomer = async () => ({ name: 'Buyer Ltd', phone: '0123456789', email: null, address: null })) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'nudgewise-customer-test-'));
   const backend = createBackend({ directory, api: { extractCustomer } });
+  require('./fixtures/load-business-data.cjs')(require('../.server-build/lib/store.js'));
   t.after(() => {
     backend.stop(); backend.db.close();
     assert.equal(path.dirname(directory), os.tmpdir());

@@ -283,7 +283,7 @@ See [`PHASE_1_2_CHANGELOG.md`](PHASE_1_2_CHANGELOG.md) for the implementation no
 
 ## Customer and order workflow
 
-Customers can now be found by phone, added manually or from reviewed OCR suggestions, and checked before accepting a buyer PO. Previous disputed invoices place new orders on hold until resolved and settled; the seller can record a reasoned exception for one PO.
+The workspace starts without sample transactions. Customers can be found by phone, added manually or from reviewed OCR suggestions, and checked before accepting a buyer PO. Purchase orders support editable header/contact/delivery fields and line items, with original PNG/JPG/PDF evidence retained in SQLite. Previous disputed invoices place new orders on hold until resolved and settled; the seller can record a reasoned exception for one PO.
 
 See [customer/order walkthrough and setup](docs/customer-order-workflow.md), [project navigation](docs/project-map.md), and the [interactive project map](graphify-out/graph.html). Backend storage and customer OCR can run independently of Telegram with `VITE_BACKEND_ENABLED=true`. This remains a synthetic-data demo with simulated seller identities.
 
