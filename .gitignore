@@ -4,11 +4,46 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
 
 # Environment
 .env
+.env.*
+!.env.example
 
 # OS / Editor
 .DS_Store
+Thumbs.db
 .vscode/
 .idea/
+
+# Frontend / build output
+node_modules/
+.vite/
+dist/
+coverage/
+.parcel-cache/
+.turbo/
+
+# Logs and local databases
+*.log
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local tools and generated files
+/.local-data
+/.server-build
+/.test-build
+/.env_folder
+/.codex
