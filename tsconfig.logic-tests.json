@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "CommonJS", "moduleResolution": "Node",
+    "baseUrl": ".", "paths": {"@/*": ["src/*"]}, "outDir": ".test-build",
+    "strict": true, "skipLibCheck": true, "noEmitOnError": true
+  },
+  "include": ["src/types.ts", "src/lib/*.ts"],
+  "exclude": ["node_modules"]
+}

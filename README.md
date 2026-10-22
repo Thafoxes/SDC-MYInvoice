@@ -1,8 +1,9 @@
-# Project Name
+# NudgeWise — Invoice Follow-Up Assistant
 
-> A one-sentence description of what your project does and who it is for.
+> A seller-controlled invoice follow-up prototype for Malaysian micro and small businesses. NudgeWise tracks outstanding invoices, prepares reminder drafts, records simulated follow-ups, and explains which customer records need attention.
 
----
+**Current version:** Vue demo v1.1 (Phase 1 reminder safeguards + Phase 2 customer follow-up priorities)  
+**Status:** Synthetic-data prototype with an optional local Telegram receipt integration: Docling OCR → `gemma4:31b` → invoice matching → demo settlement or seller attention. See [setup and test instructions](server/README.md). Real bank verification and production authentication are not implemented.
 
 ## Team Information
 
@@ -10,186 +11,275 @@
 | ---------------------- | ------------------------------------------- |
 | **Team Name**          | YOLO                                        |
 | **Team Domain**        | Domain 2                                    |
-| **SDG Track (1–17)**   | e.g. SDG 11 — Sustainable Cities and Communities |
+| **SDG Track (1–17)**   | SDG 8 — Decent Work and Economic Growth |
 | **Team Leader**        | WONG JIA SOON                               |
 | **University**         | UNIVERSITI TEKNOLOGI MALAYSIA                |
 | **Number of Members**  | 4                                      |
 
-## Links
+## Project Links
 
-| Resource          | Link                                           |
-| ----------------- | ---------------------------------------------- |
-| GitHub Repository | https://github.com/your-username/your-project  |
-| Replit Project    | https://replit.com/@your-username/your-project |
-| Live Demo         | https://your-project.replit.app                |
-| RunPod Endpoint   | https://api.runpod.ai/v2/your-endpoint-id      |
-| Slide Deck        | https://example.com/slides                     |
-| Demo Video        | https://example.com/demo-video                 |
+| Resource | Link / Status |
+| --- | --- |
+| Source repository | [Thafoxes/SDC-MYInvoice](https://github.com/Thafoxes/SDC-MYInvoice) |
+| Replit project | Not connected yet |
+| Live demo | Not deployed yet |
+| RunPod inference | Not configured yet |
+| Slides and demo video | To be added before submission |
 
----
+## Problem and Solution
 
-## Overview
+Malaysian small-business sellers may need to compare invoice records, payment updates, and customer messages manually when following up on unpaid invoices. Repeated checks can lead to wasted time or inappropriate reminders if an invoice is already settled, disputed, or awaiting verification.
 
-### Problem
+**NudgeWise** focuses on a controlled follow-up workflow: **invoice checkpoint → draft → seller review/approval → revalidation → recorded outcome**. The current build simulates the workflow using local data; optional Telegram delivery and receipt processing are available in local integration mode.
 
-Describe the real-world problem you are solving in 2–4 sentences. Who is affected, and why does it matter?
+## Implemented Demo Features
 
-### Solution
+- **Telegram customer replies (optional local mode):** Gemma classifies payment claims, promises, extension and payment-method requests. Sellers confirm dates; Dashboard and Action Center share missed-promise and verification alerts across all invoices.
+- **Receipt account-name explanation:** shows the seller’s expected receiving account name alongside the recipient name read from a receipt.
 
-Explain how your project uses AI to solve the problem and what makes it valuable.
+- **Dashboard:** collected/outstanding/overdue metrics, invoice search and filters, charts, and invoice details.
+- **Action Center:** seller reminder approvals, rejections, customer replies, receipt reviews, and activity history.
+- **AI Assistant page:** invoice-aware responses through `gemma4:31b` when Telegram integration mode is enabled, and local rules otherwise.
+- **Reminder safeguards (Phase 1):** due/overdue checkpoints; holds for disputes and unverified payment claims; approval checks; duplicate-checkpoint protection; missed-payment-promise alerts in the demo logic.
+- **Customer priorities (Phase 2):** explainable **Red / Yellow / Green / Grey** classification from synthetic invoice/payment history. Customer priority is separate from the urgency of an operational review.
+- **Demo controls:** simulated business date, invoice checks, payment recording, customer replies, and reset.
+- **Storage:** browser-only mode uses localStorage (`nudgewise-demo-v1.1`); Telegram mode uses a separate local SQLite store shared by the bot and dashboard.
 
-### Key Features
+### Not Implemented Yet
 
-- **Feature 1** — Short description.
-- **Feature 2** — Short description.
-- **Feature 3** — Short description.
+- Production Telegram webhooks, customer onboarding and seller authentication. Local polling and manual test-chat linking are implemented.
+- RunPod deployment. Direct Ollama API with Gemma 4 cloud and receipt-output validation are implemented in optional integration mode.
+- Production database and server-side user authentication. The local service uses SQLite and existing demo role rules.
+- Live Orbyte platform integration, real payment verification, and production-grade delivery handling.
 
-### Tech Stack
+**Use synthetic customer details and financial records.** Keep test-bot credentials in `.env`. The demo is not a payment-processing service or statutory e-invoice submission system.
 
-| Layer         | Technology                   |
-| ------------- | ---------------------------- |
-| Frontend      | e.g. HTML, React             |
-| Backend       | e.g. Python, Flask / FastAPI |
-| Database      | e.g. PostgreSQL, SQLite      |
-| AI / Compute  | RunPod (GPU)                 |
-| Hosting / Dev | Replit                       |
+## Tech Stack (Current)
 
----
+| Layer | Technology |
+| --- | --- |
+| Frontend | Vue 3 + TypeScript |
+| Build / development | Vite 5 |
+| Navigation | Vue Router |
+| Styling | Tailwind CSS |
+| Charts | Chart.js + vue-chartjs |
+| Icons | lucide-vue-next (current demo dependency) |
+| Application logic | TypeScript modules in `src/lib/` |
+| Persistence | Browser localStorage (frontend-only) or SQLite (Telegram mode) |
+| Local backend | Node.js 24 built-in HTTP server and SQLite |
+| OCR | Python 3.12 + Docling / RapidOCR |
+| AI | Ollama cloud API → `gemma4:31b` |
+| Messaging | Telegram Bot API with long polling |
+| Logic tests | TypeScript compiler + Node.js built-in test runner |
+
+**How it runs:** Vue frontend → local Node backend → Telegram, SQLite and Ollama’s cloud API. Docling OCR runs locally in Python. **You do not need to install or run Ollama on your computer.**
+
+## Local Setup
+
+### 1. Install dependencies (once)
+
+You need **Node.js 24+**, **Python 3.12**, a Telegram test bot token from [BotFather](https://t.me/BotFather), and an [Ollama API key](https://ollama.com/settings/keys).
+
+Open PowerShell in the project folder:
+
+```powershell
+cd D:\Github\SDC-test
+npm install
+py -3.12 -m venv .venv-telegram
+.venv-telegram/Scripts/python.exe -m pip install -r server/requirements.txt
+```
+
+If `.venv-telegram` is already set up, reuse it. On macOS/Linux, use `python3.12 -m venv .venv-telegram` and `.venv-telegram/bin/python -m pip install -r server/requirements.txt` instead.
+
+### 2. Add your keys to `.env`
+
+Create the file if it does not exist:
+
+```powershell
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+Open `.env` and fill in these settings. Keep your existing Telegram token if it is already there:
+
+```dotenv
+VITE_TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+OLLAMA_API_KEY=your_ollama_api_key
+OLLAMA_MODEL=gemma4:31b
+DOCLING_PYTHON=.venv-telegram/Scripts/python.exe
+RECEIPT_BENEFICIARY=Kedai Maju Jaya Sdn Bhd
+```
+
+- `OLLAMA_API_KEY`: your private key. The backend sends requests to `https://ollama.com/api/chat`.
+- `OLLAMA_MODEL`: use `gemma4:31b` for the direct API. This is the Gemma 4 31B cloud model; do not use the local client's `-cloud` suffix here.
+- `DOCLING_PYTHON`: the OCR environment’s Python executable. On macOS/Linux, use `.venv-telegram/bin/python`.
+- `RECEIPT_BENEFICIARY`: **your receiving bank account name as the seller**, not the buyer’s name. A different name on the receipt requires human review.
+
+Never commit `.env` or put API keys in `VITE_` variables. The backend reads the keys; the browser does not receive them. Internet access is required for Telegram and Ollama cloud. See [Ollama API documentation](https://docs.ollama.com/cloud).
+
+### 3. Start the backend — Terminal 1
+
+```powershell
+cd D:\Github\SDC-test
+npm run server
+```
+
+Leave this terminal open. It should show:
+
+```text
+Local Telegram demo API: http://127.0.0.1:8787
+```
+
+The backend handles Telegram, OCR, invoice updates and Ollama API requests. The first receipt can take longer while OCR models initialize or download.
+
+### 4. Start the frontend — Terminal 2
+
+```powershell
+cd D:\Github\SDC-test
+npm run dev -- --host 127.0.0.1 --strictPort
+```
+
+Open [Dashboard](http://127.0.0.1:5173/#/dashboard) or [Action Center](http://127.0.0.1:5173/#/action-center). Keep both terminals open.
+
+**Next time:** you only need the two startup commands above. No `ollama serve`, model download or local Ollama sign-in is needed.
+
+### 5. Connect Telegram and try it
+
+1. Send `/start` in a private chat with your bot. It replies with your chat ID.
+2. In **Action Center → Link a test customer**, select the customer whose invoice you are testing and enter that ID. One chat can belong to only one customer.
+3. Approve that customer’s invoice reminder, then click **Send to Telegram**. Use **Demo Controls → Run Invoice Check** to prepare eligible reminders if needed.
+4. Reply to the invoice message with a synthetic PDF/image receipt or a message such as “I will pay by the end of the week.”
+5. Check **Customer Responses** and **Needs your attention**. Sellers confirm proposed dates and review payment claims. An exact receipt match can settle a synthetic invoice automatically.
+
+The buyer’s chat must be explicitly linked; seeded chat IDs are sample values. For detailed matching rules, receipt fixtures and review actions, see [the integration guide](server/README.md).
+
+### Stop or restart
+
+Press **Ctrl+C** in the relevant terminal. After editing `.env`, stop and restart the backend. If you changed `VITE_TELEGRAM_ENABLED`, restart the frontend too. If an agent started the backend, ask it to stop or restart that process before starting a second copy.
+
+### Common problems
+
+| Problem | Fix |
+| --- | --- |
+| Local API unavailable | Start `npm run server` in Terminal 1. |
+| Missing Ollama key / access denied | Set a valid `OLLAMA_API_KEY` in `.env` and restart the backend. |
+| Ollama API request fails | Check internet access, account limits and `OLLAMA_MODEL=gemma4:31b`. |
+| Bot does not reply | Check `TELEGRAM_BOT_TOKEN`, restart the backend, and check polling errors in Action Center. Use a test bot without a webhook. |
+| Seeded chat ID / chat already linked | Link the correct customer. If your ID is already linked to Ahmad, test Ahmad’s invoice. |
+| Recipient name differs | Check the receipt recipient against `RECEIPT_BENEFICIARY`. It is the seller’s account name. |
+| OCR fails | Check Python 3.12 and `DOCLING_PYTHON`; install `server/requirements.txt` in that environment. |
+| Port already in use | Stop the existing frontend/backend in its terminal, or ask the agent that started it. |
+
+### Optional: frontend only
+
+Set `VITE_TELEGRAM_ENABLED=false` in `.env`, then run only the frontend command. This mode uses browser storage and simulated AI; Telegram mode uses separate SQLite data in `.local-data/`.
+
+### Checks
+
+```powershell
+npm run test:logic
+npm run test:telegram
+npm run build
+```
+
+Optional: `npm run test:telegram:live` uses real OCR and your Ollama API key with synthetic fixtures. It mocks Telegram delivery, so no messages are sent.
+
+Keep this prototype on localhost and use synthetic financial records. AI and receipts cannot verify that bank funds arrived.
 
 ## Project Structure
 
-```
-.
-├── docs/                    # Screenshots, diagrams
-├── runpod/
-│   └── handler.py           # RunPod serverless handler (GPU workload)
+```text
+SDC-MYInvoice/
+├── index.html
+├── package.json
+├── package-lock.json
+├── vite.config.ts
+├── tailwind.config.js
+├── tsconfig.json
+├── tsconfig.server.json
+├── server/                     # local API, Docling worker and integration guide
+├── .env.example                # settings template; real .env stays private
+├── tsconfig.logic-tests.json
 ├── src/
-│   ├── main.py              # Application entry point
-│   └── utils.py             # Helper functions
-├── submission/              # Required submission documents
-│   ├── REPLIT PROOF OF USE.pdf
-│   ├── RUNPOD PROOF OF USE.pdf
-│   └── Submission Template SDC Hackathon.pdf
+│   ├── main.ts
+│   ├── App.vue
+│   ├── index.css
+│   ├── router/index.ts
+│   ├── views/
+│   │   ├── DashboardView.vue
+│   │   ├── ActionCenterView.vue
+│   │   └── AiAssistantView.vue
+│   ├── components/
+│   │   ├── AppSidebar.vue
+│   │   ├── AppHeader.vue
+│   │   ├── InvoiceDetailDrawer.vue
+│   │   ├── DemoControls.vue
+│   │   ├── StatusBadge.vue
+│   │   └── BaseModal.vue
+│   ├── services/commands.ts    # browser-to-backend commands
+│   ├── composables/useDemoStore.ts
+│   └── lib/
+│       ├── data.ts               # data access compatibility
+│       ├── store.ts              # synthetic seed and persistence adapter
+│       ├── receipts.ts           # invoice/receipt matching
+│       ├── replyAnalysis.ts      # validated reply fields and date resolution
+│       ├── attention.ts          # shared dashboard/review queue
+│       ├── actions.ts            # invoice/reminder actions
+│       ├── reminderEngine.ts     # checkpoint and hold rules
+│       ├── priorityEngine.ts     # customer follow-up priorities
+│       ├── aiService.ts          # simulated assistant
+│       └── format.ts
 ├── tests/
-│   └── test_utils.py        # Unit tests
-├── .env.example             # Example environment variables
-├── .gitignore
-├── .replit                  # Replit run configuration
+│   ├── telegram.test.cjs
+│   ├── telegram-live.cjs
+│   ├── fixtures/
+│   ├── logic.test.cjs
+│   └── setup-test-build.cjs
+├── PHASE_1_2_CHANGELOG.md
+├── tech_stack.md
 ├── LICENSE
-├── requirements.txt         # Python dependencies
 └── README.md
 ```
 
-### Architecture
+The project may also include other repository metadata such as `.codex/` and `.gitignore`. Do not commit `node_modules/`, `dist/`, `.test-build/`, `.server-build/`, `.local-data/`, `.venv-telegram/`, or `.env` files.
 
-```
-User ──► Replit (App / API) ──► RunPod Endpoint (GPU model)
-                │
-                └──► Response returned to user
-```
+## Development and Contribution
 
----
-
-## How to Run
-
-### Option 1 — Run on Replit (Recommended)
-
-1. Open the [Replit Project](https://replit.com/@your-username/your-project), or import this repository via **Create Repl → Import from GitHub**.
-2. Open the **Secrets** tab (🔒) and add the variables listed in `.env.example`:
-   - `RUNPOD_API_KEY`
-   - `RUNPOD_ENDPOINT_ID`
-3. Click **Run**. Replit uses the `.replit` file to start `python src/main.py`.
-
-### Option 2 — Run Locally
+For a shared repository, pull your team's latest changes before starting work. Prefer a feature branch and pull request rather than having everyone push directly to `main`:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-username/your-project.git
-cd your-project
-
-# 2. Create and activate a virtual environment
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Configure environment variables
-cp .env.example .env            # then fill in your values
-
-# 5. Run the app
-python src/main.py
+cd ~/SDC-MYInvoice
+git pull --ff-only origin main
+git switch -c feature/your-change
+# edit and test your code
+npm run test:logic
+npm run build
+git add .
+git commit -m "Describe your change"
+git push -u origin feature/your-change
 ```
 
-### Run Tests
+Before staging or pushing, check that no `.env`, credentials, personal data, or build artifacts are included.
 
-```bash
-python -m unittest discover tests
-```
+## Hackathon Progress and Submission
 
----
+- [x] Vue demo dashboard, invoice views, and local activity history.
+- [x] Local demo clock, reset, and simulated payments.
+- [x] Phase 1 reminder/approval safeguards implemented in demo logic.
+- [x] Phase 2 rule-based customer priority classification implemented.
+- [ ] Full browser regression and complete v1.1 acceptance testing.
+- [x] Local SQLite backend for Telegram integration.
+- [ ] Production database and authenticated server-side permissions.
+- [x] Local seller-approved Telegram delivery and manually linked test chats.
+- [ ] Production customer onboarding and delivery handling.
+- [x] Direct Ollama cloud API with Gemma 4, receipt OCR, customer-reply classification and synthetic integration tests.
+- [ ] Hosted inference and production acceptance testing.
+- [ ] Simulated Orbyte connector interface and second-business isolation demonstration.
+- [ ] Replit and RunPod proof of use, if required by the submission rules.
+- [ ] Slides, demo video, and final submission documents.
+- [ ] Verify documentation and GitHub repository are up to date.
 
-## How We Use Replit *(Required)*
-
-Describe how your team used Replit. For example:
-
-- **Development:** Collaborative coding in a shared Repl using Multiplayer.
-- **Hosting:** The app is deployed with Replit Deployments at the Live Demo link above.
-- **Secrets:** API keys are stored in Replit Secrets, never in the code.
-
-📄 Proof of use: [`submission/REPLIT PROOF OF USE.pdf`](submission/REPLIT%20PROOF%20OF%20USE.pdf)
-
-## How We Use RunPod *(Required)*
-
-Describe how your team used RunPod. For example:
-
-- **Workload:** Model inference (e.g. text generation, image processing) runs on a RunPod GPU.
-- **Setup:** `runpod/handler.py` is deployed as a **RunPod Serverless Endpoint**.
-- **Integration:** The Replit app sends requests to the endpoint using `RUNPOD_API_KEY` and `RUNPOD_ENDPOINT_ID`.
-
-Example request:
-
-```bash
-curl -X POST https://api.runpod.ai/v2/$RUNPOD_ENDPOINT_ID/runsync \
-  -H "Authorization: Bearer $RUNPOD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"input": {"prompt": "Hello"}}'
-```
-
-📄 Proof of use: [`submission/RUNPOD PROOF OF USE.pdf`](submission/RUNPOD%20PROOF%20OF%20USE.pdf)
-
----
-
-## Challenges & Learnings
-
-- What challenges did you face, and how did you overcome them?
-- What did your team learn?
-
-## Future Improvements
-
-- [ ] Improvement 1
-- [ ] Improvement 2
-
-## Team
-
-| Name        | Role                | GitHub                                   |
-| ----------- | ------------------- | ---------------------------------------- |
-| Member Name | Team Lead / Backend | [@username](https://github.com/username) |
-| Member Name | Frontend            | [@username](https://github.com/username) |
-| Member Name | AI / RunPod         | [@username](https://github.com/username) |
-
----
-
-## Submission Checklist
-
-- [ ] Team name, domain (Domain 1 / Domain 2) and SDG track filled in
-- [ ] Slide deck link added
-- [ ] Demo video link added
-- [ ] Replit used, with proof of use in `submission/`
-- [ ] RunPod used, with proof of use in `submission/`
-- [ ] Submission template completed in `submission/`
-- [ ] "How to Run" steps verified
-- [ ] No API keys or secrets committed to the repository
+See [`PHASE_1_2_CHANGELOG.md`](PHASE_1_2_CHANGELOG.md) for the implementation notes. For the full requirements and acceptance criteria, refer to the team's NudgeWise v1.1 requirements document.
 
 ## License
 
