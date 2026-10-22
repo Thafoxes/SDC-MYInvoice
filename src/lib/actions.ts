@@ -3,12 +3,13 @@ import type { FollowUpAction, Invoice } from '@/types';
 import {
   getStore, computeStatus, addPayment, addActivity, addNotificationRecord,
   updateInvoice, updateFollowUp, addCustomerResponse, DEMO_BUSINESS_ID,
-  updateCustomerResponse,
+  updateCustomerResponse, update, computeInvoiceWithCustomer, DEMO_BUSINESS_NAME,
 } from './store';
+import { isLang, customerLang, LANGS } from './reminderTemplates';
 import { validDate, resolvePromiseDate, responseFlags, type ReplyAnalysis } from './replyAnalysis';
 import { promiseOutstanding, replyNeedsReview } from './attention';
 import { classifyCustomerResponse } from './aiService';
-import { approvalFingerprint, determineCheckpoint } from './reminderEngine';
+import { approvalFingerprint, determineCheckpoint, generateReminderMessage } from './reminderEngine';
 import { subtractMoney, sumMoney, toCents } from './format';
 
 type ActionResult = { success: boolean; error?: string };
@@ -267,4 +268,33 @@ export function sendApprovedFollowUp(followUpId: string, senderName: string, bus
   addActivity(businessId, inv.id, 'reminder_simulated', senderName, 'seller',
     `SIMULATION ONLY: ${fu.id} approved message to ${fu.recipient}; no actual delivery`);
   return { success: true, simulated: true };
+}
+
+/**
+ * Saves the language a customer's reminders are written in. Drafts that are still
+ * awaiting approval and were never edited by hand are rewritten in the new language;
+ * approved, sent or hand-edited reminders are left unchanged.
+ */
+export function setCustomerLanguage(customerId: string, lang: string, actorName: string, actorRole: string, businessId: string = DEMO_BUSINESS_ID): ActionResult & { redrafted?: number } {
+  if (!isLang(lang)) return { success: false, error: 'Unsupported language' };
+  if (!['seller', 'staff'].includes(actorRole) || !actorForBusiness(actorName, actorRole, businessId)) return { success: false, error: 'Not authorized for this business' };
+  const customer = getStore().customers.find(c => c.id === customerId && c.business_id === businessId);
+  if (!customer) return { success: false, error: 'Customer not found for this business' };
+  if (customerLang(customer) === lang) return { success: true, redrafted: 0 };
+  update(d => { const c = d.customers.find(x => x.id === customerId && x.business_id === businessId); if (c) c.preferred_language = lang; });
+  const data = getStore();
+  const businessName = data.businesses.find(b => b.id === businessId)?.name ?? DEMO_BUSINESS_NAME;
+  let redrafted = 0;
+  for (const fu of data.followUpActions.filter(f => f.business_id === businessId && f.customer_id === customerId
+    && f.approval_state === 'pending' && f.send_state === 'not_sent' && f.checkpoint < 5 && f.message_version === 1)) {
+    const inv = data.invoices.find(i => i.id === fu.invoice_id && i.business_id === businessId);
+    if (!inv) continue;
+    const message = generateReminderMessage(computeInvoiceWithCustomer(inv, getStore(), data.demoState.simulated_date), fu.checkpoint, businessName);
+    updateFollowUp(fu.id, { message });
+    redrafted++;
+  }
+  const label = LANGS.find(l => l.id === lang)?.label ?? lang;
+  addActivity(businessId, null, 'customer_language_set', actorName, actorRole,
+    `${customer.name}: reminders will be written in ${label}${redrafted ? `; ${redrafted} unapproved draft${redrafted === 1 ? '' : 's'} rewritten` : ''}`);
+  return { success: true, redrafted };
 }

@@ -8,6 +8,7 @@ import {
 } from './store';
 import { notifyMissedPromises, replyNeedsReview } from './attention';
 import { subtractMoney, sumMoney, daysOverdue, daysBetween, formatMYR } from './format';
+import { templateReminder, stageTone, customerLang } from './reminderTemplates';
 
 export interface CheckpointResult {
   checkpoint: number;
@@ -82,17 +83,16 @@ function formatDateStr(s: string): string {
   return new Date(s + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' });
 }
 
+/** Drafts a reminder in the customer's language, with the tone set by the reminder stage. */
 export function generateReminderMessage(inv: InvoiceWithCustomer, checkpoint: number, businessName: string = DEMO_BUSINESS_NAME): string {
-  const customerName = inv.customer?.name ?? 'Valued Customer';
-  const amount = formatMYR(inv.outstanding_balance);
-  const invNum = inv.invoice_number;
-  if (checkpoint === 1) {
-    return `Dear ${customerName}, this is a friendly reminder that invoice ${invNum} for ${amount} is due on ${formatDateStr(inv.due_date)}. Kindly arrange payment before the due date. Thank you. — ${businessName}`;
-  }
-  if (checkpoint === 2) {
-    return `Dear ${customerName}, this is a friendly reminder that invoice ${invNum} for ${amount} is now overdue. Kindly arrange payment at your earliest convenience. Thank you. — ${businessName}`;
-  }
-  return `Dear ${customerName}, our records show that invoice ${invNum} for ${amount} remains unpaid. We kindly request your urgent attention to settle this balance. If you have already paid, please share the payment reference so we can verify. Thank you. — ${businessName}`;
+  return templateReminder({
+    customerName: inv.customer?.name ?? 'Valued Customer',
+    invoiceNumber: inv.invoice_number,
+    amount: inv.outstanding_balance,
+    dueDate: inv.due_date,
+    daysOverdue: inv.days_overdue,
+    businessName,
+  }, stageTone(checkpoint), customerLang(inv.customer));
 }
 
 export function runInvoiceCheck(businessId: string = DEMO_BUSINESS_ID, businessName: string = DEMO_BUSINESS_NAME): { prepared: number; escalated: number; skipped: number; details: string[] } {
