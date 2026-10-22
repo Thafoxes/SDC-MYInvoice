@@ -3,6 +3,7 @@ import {
   InvoiceWithCustomer,
 } from '@/types';
 import { getStore, computeInvoiceWithCustomer, DEMO_BUSINESS_ID, DEMO_BUSINESS_NAME } from './store';
+import { resolvePromiseDate } from './replyAnalysis';
 import { formatMYR, formatDate, sumMoney } from './format';
 
 export const AI_CATEGORIES = [
@@ -22,7 +23,7 @@ export interface AiClassification {
   used_fallback: boolean;
 }
 
-export function classifyCustomerResponse(message: string): AiClassification {
+export function classifyCustomerResponse(message: string, sentAt: string = new Date().toISOString(), timezone: string = 'Asia/Kuala_Lumpur'): AiClassification {
   const lower = message.toLowerCase();
 
   if (lower.includes('already paid') || lower.includes('sudah bayar') || lower.includes('paid yesterday') || lower.includes('made payment') || lower.includes('transfer sudah')) {
@@ -31,7 +32,7 @@ export function classifyCustomerResponse(message: string): AiClassification {
   if (lower.includes('dispute') || lower.includes('never received') || lower.includes('tidak terima') || lower.includes('wrong') || lower.includes('not delivered') || lower.includes('defective')) {
     return { category: 'invoice_dispute', confidence: 0.85, extracted_date: null, suggested_action: 'Pause reminders. Create exception. Notify seller to investigate.', used_fallback: true };
   }
-  const dateMatch = extractDate(lower);
+  const dateMatch = extractDate(lower, sentAt, timezone);
   if (lower.includes('will pay') || lower.includes('can i pay') || lower.includes('next friday') || lower.includes('next week') || lower.includes('pay tomorrow') || lower.includes('bayar esok') || lower.includes('extension') || lower.includes('pay by')) {
     const category = lower.includes('can i') || lower.includes('extension') || lower.includes('request') ? 'payment_promise_or_extension_request' : 'payment_promise';
     return {
@@ -48,29 +49,9 @@ export function classifyCustomerResponse(message: string): AiClassification {
   return { category: 'unclear_requires_review', confidence: 0.40, extracted_date: null, suggested_action: 'Message is unclear. Flag for seller manual review.', used_fallback: true };
 }
 
-function extractDate(lower: string): string | null {
-  const today = new Date();
-  if (lower.includes('tomorrow') || lower.includes('esok')) {
-    const d = new Date(today); d.setDate(d.getDate() + 1);
-    return d.toLocaleDateString('en-CA');
-  }
-  if (lower.includes('next friday')) {
-    const d = new Date(today);
-    const day = d.getDay();
-    const diff = (5 - day + 7) % 7 || 7;
-    d.setDate(d.getDate() + diff);
-    return d.toLocaleDateString('en-CA');
-  }
-  if (lower.includes('next week')) {
-    const d = new Date(today); d.setDate(d.getDate() + 7);
-    return d.toLocaleDateString('en-CA');
-  }
-  const m = lower.match(/(\d{1,2})\/(\d{1,2})/);
-  if (m) {
-    const day = parseInt(m[1]); const month = parseInt(m[2]); const year = today.getFullYear();
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  }
-  return null;
+function extractDate(lower: string, sentAt: string, timezone: string): string | null {
+  const phrase = lower.match(/(?:the )?end of (?:the |this )?(?:day|week)|next week|(?:next |this )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|tomorrow|tonight|today|esok|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}(?:\/\d{4})?/i)?.[0] || null;
+  return resolvePromiseDate(phrase, sentAt, timezone).date;
 }
 
 export function getSuggestedAction(category: string): string {

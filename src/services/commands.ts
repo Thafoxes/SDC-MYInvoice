@@ -7,7 +7,7 @@ import { refreshStore } from '@/composables/useDemoStore';
 
 export const telegramEnabled = import.meta.env.VITE_TELEGRAM_ENABLED === 'true';
 export const connectionError = ref('');
-export const integration = ref({ model: 'gemma4:31b-cloud', botConfigured: false, pollingError: '', lastPollAt: null as string | null });
+export const integration = ref({ model: 'gemma4:31b', botConfigured: false, pollingError: '', lastPollAt: null as string | null, receivingAccountName: '' });
 let requestRevision = 0;
 
 export async function refreshServer() {
@@ -44,6 +44,7 @@ export const sendApprovedFollowUp = command('sendApprovedFollowUp', actions.send
 export const resolveVerificationHold = command('resolveVerificationHold', actions.resolveVerificationHold);
 export const resolveDispute = command('resolveDispute', actions.resolveDispute);
 export const confirmPromise = command('confirmPromise', actions.confirmPromise);
+export const reviewCustomerPromise = command('reviewCustomerPromise', actions.reviewCustomerPromise);
 export const simulateCustomerResponse = command('simulateCustomerResponse', actions.simulateCustomerResponse);
 export const recordPayment = command('recordPayment', actions.recordPayment);
 export const runInvoiceCheck = command('runInvoiceCheck', localCheck);

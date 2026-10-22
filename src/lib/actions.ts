@@ -3,7 +3,10 @@ import type { FollowUpAction, Invoice } from '@/types';
 import {
   getStore, computeStatus, addPayment, addActivity, addNotificationRecord,
   updateInvoice, updateFollowUp, addCustomerResponse, DEMO_BUSINESS_ID,
+  updateCustomerResponse,
 } from './store';
+import { validDate, resolvePromiseDate, responseFlags, type ReplyAnalysis } from './replyAnalysis';
+import { promiseOutstanding, replyNeedsReview } from './attention';
 import { classifyCustomerResponse } from './aiService';
 import { approvalFingerprint, determineCheckpoint } from './reminderEngine';
 import { subtractMoney, sumMoney, toCents } from './format';
@@ -45,6 +48,7 @@ function checkEligibility(fu: FollowUpAction, inv: Invoice, now: string): string
   if (balanceForInvoice(inv) <= 0) return 'Invoice fully paid';
   if (inv.dispute_active) return 'Active dispute';
   if (inv.verification_hold) return 'Payment claim awaiting verification';
+  if (replyNeedsReview(getStore(), inv.id, inv.business_id)) return 'Customer reply awaiting review';
   if (inv.promise_confirmed && inv.promise_to_pay_date && inv.promise_to_pay_date >= now) return 'Active payment promise';
   const cp = determineCheckpoint({ ...inv, status: computeStatus(inv, getStore(), now) }, now);
   if (!cp || !cp.shouldPrepare || cp.checkpoint !== fu.checkpoint) return 'Reminder checkpoint is no longer eligible';
@@ -79,10 +83,12 @@ export function recordPayment(
   const updated = getStore();
   const newStatus = computeStatus(inv, updated, updated.demoState.simulated_date);
   if (newStatus === 'paid') {
-    updateInvoice(invoiceId, { status: 'paid', promise_confirmed: false, promise_to_pay_date: null });
+    updateInvoice(invoiceId, { status: 'paid', verification_hold: false, promise_confirmed: false, promise_to_pay_date: null, promise_amount: null });
     addActivity(businessId, invoiceId, 'settlement_recorded', actorName, 'seller',
       `${inv.invoice_number} fully settled; future reminders stopped`);
   }
+  else if (inv.promise_confirmed && !promiseOutstanding(inv, updated, updated.demoState.simulated_date))
+    updateInvoice(invoiceId, { promise_confirmed: false, promise_to_pay_date: null, promise_amount: null });
   return { success: true, newStatus };
 }
 
@@ -104,11 +110,60 @@ export function resolveDispute(invoiceId: string, actorName: string, businessId:
 export function confirmPromise(invoiceId: string, promiseDate: string, confirmed: boolean, actorName: string, businessId: string = DEMO_BUSINESS_ID): ActionResult {
   if (!invoiceForBusiness(invoiceId, businessId)) return { success: false, error: 'Invoice not found for this business' };
   if (!sellerInBusiness(actorName, businessId)) return { success: false, error: 'Seller authorization required' };
-  if (confirmed && (!/^\d{4}-\d{2}-\d{2}$/.test(promiseDate) || Number.isNaN(Date.parse(promiseDate)))) return { success: false, error: 'Invalid promise date' };
-  updateInvoice(invoiceId, { promise_to_pay_date: confirmed ? promiseDate : null, promise_confirmed: confirmed });
+  if (confirmed && !validDate(promiseDate)) return { success: false, error: 'Invalid promise date' };
+  updateInvoice(invoiceId, { promise_to_pay_date: confirmed ? promiseDate : null, promise_confirmed: confirmed, promise_amount: null });
   if (confirmed && promiseDate >= getStore().demoState.simulated_date) invalidateOpenActions(invoiceId, businessId, 'Confirmed promise-to-pay supersedes reminder');
   addActivity(businessId, invoiceId, 'promise_updated', actorName, 'seller',
     `Promise ${confirmed ? `confirmed for ${promiseDate}` : 'declined'}; no payment terms changed automatically`);
+  return { success: true };
+}
+
+export function applyCustomerReply(responseId: string, analysis: ReplyAnalysis, businessId: string = DEMO_BUSINESS_ID): void {
+  const response = getStore().customerResponses.find(r => r.id === responseId && r.business_id === businessId);
+  if (!response) throw new Error('Customer response not found');
+  const data = getStore();
+  const timezone = data.businesses.find(b => b.id === businessId)?.timezone || 'Asia/Kuala_Lumpur';
+  const deadline = resolvePromiseDate(analysis.date_phrase, response.sent_at || response.created_at, timezone);
+  updateCustomerResponse(responseId, {
+    ai_state: 'complete', ai_flags: analysis.flags, ai_category: analysis.flags.join(', '), ai_date_phrase: analysis.date_phrase,
+    ai_extracted_date: deadline.date, ai_date_note: deadline.note, ai_promised_amount: analysis.promised_amount,
+    ai_payment_method: analysis.payment_method, promise_review: 'pending', ai_confidence: null,
+    ai_suggested_action: response.invoice_id ? 'Review the customer message. Confirm payment dates and arrangements explicitly; payment claims require bank verification.' : 'No matching invoice. Review the original message before taking action.',
+  });
+  const invoice = invoiceForBusiness(response.invoice_id || '', businessId);
+  if (!invoice || balanceForInvoice(invoice) <= 0) return;
+  if (analysis.flags.includes('payment_claim')) {
+    updateInvoice(invoice.id, { verification_hold: true });
+    invalidateOpenActions(invoice.id, businessId, 'Customer payment claim requires verification');
+  }
+  if (analysis.flags.includes('dispute')) {
+    updateInvoice(invoice.id, { dispute_active: true });
+    invalidateOpenActions(invoice.id, businessId, 'Customer disputes invoice');
+  }
+  addActivity(businessId, invoice.id, 'customer_reply_classified', 'Gemma reply classifier', 'system', `Customer reply classified: ${analysis.flags.join(', ')}`);
+}
+
+export function reviewCustomerPromise(responseId: string, date: string, confirmed: boolean, actorName: string, amount: number | null = null, businessId: string = DEMO_BUSINESS_ID): ActionResult {
+  if (!sellerInBusiness(actorName, businessId)) return { success: false, error: 'Seller authorization required' };
+  const data = getStore();
+  const response = data.customerResponses.find(r => r.id === responseId && r.business_id === businessId);
+  const invoice = invoiceForBusiness(response?.invoice_id || '', businessId);
+  if (!response || !invoice) return { success: false, error: 'Link to a valid invoice before confirming a promise' };
+  const flags = responseFlags(response);
+  if (!flags.some(f => ['payment_promise', 'extension_request', 'installment_request'].includes(f))) return { success: false, error: 'Response does not contain a payment-date proposal' };
+  if (response.promise_review && response.promise_review !== 'pending') return { success: false, error: 'This proposal was already decided' };
+  if (confirmed && flags.includes('payment_claim') && invoice.verification_hold) return { success: false, error: 'Review the claimed payment and release its verification hold before confirming the remaining-payment promise' };
+  if (confirmed && (balanceForInvoice(invoice) <= 0 || !validDate(date))) return { success: false, error: 'Choose a valid date for an unpaid invoice' };
+  if (confirmed && amount !== null && (!Number.isFinite(amount) || amount <= 0 || amount > balanceForInvoice(invoice) || Math.abs(toCents(amount) / 100 - amount) > 1e-7)) return { success: false, error: 'Promised amount must be positive and no more than the outstanding balance' };
+  if (confirmed) {
+    const result = confirmPromise(invoice.id, date, true, actorName, businessId);
+    if (!result.success) return result;
+    const paid = sumMoney(data.payments.filter(p => p.invoice_id === invoice.id && p.business_id === businessId && p.verification_status === 'recorded').map(p => p.amount));
+    updateInvoice(invoice.id, { promise_amount: amount, promise_baseline_paid: paid });
+  }
+  const otherWork = flags.some(f => ['payment_claim', 'dispute', 'payment_method_request', 'unclear'].includes(f));
+  updateCustomerResponse(response.id, { promise_review: confirmed ? 'confirmed' : 'declined', promise_reviewed_date: confirmed ? date : null, promise_reviewed_amount: confirmed ? amount : null, review_status: otherWork ? 'pending' : 'reviewed' });
+  addActivity(businessId, invoice.id, 'customer_promise_reviewed', actorName, 'seller', `Customer proposal ${confirmed ? `accepted for ${date}${amount === null ? '' : `, RM${amount.toFixed(2)}`}` : 'declined'}; original invoice due date unchanged`);
   return { success: true };
 }
 
@@ -117,13 +172,14 @@ export function simulateCustomerResponse(invoiceId: string, customerId: string, 
   const customer = getStore().customers.find(c => c.id === customerId && c.business_id === businessId);
   if (!inv || !customer || inv.customer_id !== customer.id) return { success: false, error: 'Customer and invoice do not match this business' };
   if (!message.trim()) return { success: false, error: 'Response cannot be empty' };
-  const classification = classifyCustomerResponse(message);
+  const classification = classifyCustomerResponse(message, getStore().demoState.simulated_date + 'T00:00:00Z', getStore().businesses.find(b => b.id === businessId)?.timezone || 'Asia/Kuala_Lumpur');
   addCustomerResponse({
     business_id: businessId, invoice_id: invoiceId, customer_id: customerId,
     follow_up_action_id: null, message,
     ai_category: classification.category, ai_confidence: classification.confidence,
     ai_extracted_date: classification.extracted_date, ai_suggested_action: classification.suggested_action,
     review_status: 'pending',
+    sent_at: getStore().demoState.simulated_date + 'T00:00:00Z',
   });
   if (classification.category === 'payment_already_made_claim') {
     updateInvoice(invoiceId, { verification_hold: true });

@@ -9,6 +9,8 @@ const actions = require('../.server-build/lib/actions.js');
 const { validateExtraction, matchReceipt } = require('../.server-build/lib/receipts.js');
 const { fileExtension } = require('../server/integrations.cjs');
 const { Readable } = require('node:stream');
+const { resolvePromiseDate, validateReplyAnalysis } = require('../.server-build/lib/replyAnalysis.js');
+const { getAttention } = require('../.server-build/lib/attention.js');
 
 function request(backend, method, url, body, headers = {}) {
   return new Promise(resolve => {
@@ -154,7 +156,7 @@ test('API rejects foreign origins, DNS rebinding hosts, missing local header and
   assert.equal((await request(backend, 'GET', '/api/state', undefined, { host: 'evil.example' })).status, 403);
   assert.equal((await request(backend, 'POST', '/api/command', { name: 'resetStore', args: [] }, { 'x-nudgewise-local': '' })).status, 403);
   assert.equal((await request(backend, 'POST', '/api/command', { name: '__proto__', args: [] })).status, 400);
-  assert.equal((await request(backend, 'GET', '/api/state')).body.integration.model, 'gemma4:31b-cloud');
+  assert.equal((await request(backend, 'GET', '/api/state')).body.integration.model, 'gemma4:31b');
 });
 
 test('seller can link a chat and review an unmatched receipt through the API', async t => {
@@ -187,4 +189,134 @@ test('restart exposes interrupted receipts and uncertain deliveries for review',
     assert.equal(reopened.snapshot().receipts[0].status, 'attention');
     assert.equal(reopened.snapshot().followUpActions[0].send_state, 'failed');
   } finally { reopened.db.close(); }
+});
+
+const reply = (id, text, date = '2026-10-22T09:00:00+08:00') => ({ update_id: id, message: { message_id: id + 1000, date: Date.parse(date) / 1000, chat: { id: 123456, type: 'private' }, reply_to_message: { message_id: 900 }, text } });
+const analysis = (flags = ['payment_promise'], date_phrase = 'tonight', promised_amount = null) => ({ flags, date_phrase, promised_amount, payment_method: null });
+
+test('relative promise dates use the message timestamp and business timezone', () => {
+  const date = phrase => resolvePromiseDate(phrase, '2026-10-22T09:00:00+08:00', 'Asia/Kuala_Lumpur').date;
+  assert.equal(date('tonight'), '2026-10-22');
+  assert.equal(date('tomorrow'), '2026-10-23');
+  assert.equal(date('end of the week'), '2026-10-25');
+  assert.equal(date('Friday'), '2026-10-23');
+  assert.equal(date('next week'), null);
+  assert.equal(date('2026-02-30'), null);
+  assert.equal(resolvePromiseDate('today', '2026-10-22T18:00:00Z', 'Asia/Kuala_Lumpur').date, '2026-10-23');
+});
+
+test('text replies are retained, classified, deduplicated, and require seller confirmation', async t => {
+  const backend = fixture(t, { classifyReply: async () => analysis() }); await send(backend);
+  const message = reply(10, 'I will pay tonight');
+  await backend.receive(message); await backend.receive(message);
+  const data = backend.snapshot();
+  const response = data.customerResponses.find(r => r.id === 'tg-reply-10');
+  assert.equal(data.customerResponses.filter(r => r.id === response.id).length, 1);
+  assert.equal(response.ai_extracted_date, '2026-10-22');
+  assert.equal(response.ai_state, 'complete');
+  assert.equal(data.invoices.find(i => i.id === 'inv-1006').promise_confirmed, false);
+  assert.ok(getAttention(data, 'biz-001', '2026-10-22').some(i => i.target === response.id));
+  const result = actions.reviewCustomerPromise(response.id, '2026-10-23', true, 'Siti Aishah');
+  assert.equal(result.success, true);
+  assert.equal(store.getStore().invoices.find(i => i.id === 'inv-1006').promise_to_pay_date, '2026-10-23');
+  assert.equal(store.getStore().invoices.find(i => i.id === 'inv-1006').due_date, '2026-10-19');
+});
+
+test('unknown invoice, model failure, and malformed JSON remain review work', async t => {
+  const backend = fixture(t, { classifyReply: async () => ({ flags: ['invented'] }) });
+  await backend.receive(reply(11, 'I will pay tonight'));
+  assert.equal(backend.snapshot().customerResponses.find(r => r.id === 'tg-reply-11').invoice_id, null);
+  await send(backend); await backend.receive(reply(12, 'I will pay tonight'));
+  const response = backend.snapshot().customerResponses.find(r => r.id === 'tg-reply-12');
+  assert.equal(response.ai_state, 'failed');
+  assert.ok(getAttention(backend.snapshot(), 'biz-001', '2026-10-22').some(i => i.target === response.id));
+  assert.throws(() => validateReplyAnalysis(analysis(['payment_promise'], 'tomorrow'), 'I will pay next week'));
+});
+
+test('mixed paid-claim and promise requires verification before accepting the remainder', async t => {
+  const backend = fixture(t, { classifyReply: async () => analysis(['payment_claim', 'payment_promise'], 'Friday', 900) });
+  await send(backend); await backend.receive(reply(13, 'Paid half. I will pay the rest Friday'));
+  let data = backend.snapshot();
+  assert.equal(data.payments.length, 15);
+  assert.equal(data.invoices.find(i => i.id === 'inv-1006').verification_hold, true);
+  assert.equal(actions.reviewCustomerPromise('tg-reply-13', '2026-10-23', true, 'Siti Aishah', 900).success, false);
+  assert.equal(actions.recordPayment('inv-1006', 900, '2026-10-20', 'bank_transfer', 'FIRST-HALF', 'Siti Aishah').success, true);
+  actions.resolveVerificationHold('inv-1006', true, 'Siti Aishah');
+  assert.equal(actions.reviewCustomerPromise('tg-reply-13', '2026-10-23', true, 'Siti Aishah', 900).success, true);
+  data = backend.snapshot();
+  assert.ok(getAttention(data, 'biz-001', '2026-10-24').some(i => i.kind === 'missed_promise' && i.invoiceId === 'inv-1006'));
+  store.setDemoDate('2026-10-24');
+  actions.recordPayment('inv-1006', 900, '2026-10-24', 'bank_transfer', 'REMAINDER', 'Siti Aishah');
+  assert.ok(!getAttention(backend.snapshot(), 'biz-001', '2026-10-24').some(i => i.kind === 'missed_promise' && i.invoiceId === 'inv-1006'));
+});
+
+test('payment method and instalment requests are flagged without changing terms', async t => {
+  const backend = fixture(t, { classifyReply: async () => ({ ...analysis(['payment_method_request', 'installment_request'], null, 500), payment_method: 'cash' }) });
+  await send(backend); await backend.receive(reply(14, 'Can I pay 500 cash in instalments?'));
+  const data = backend.snapshot();
+  assert.equal(data.customerResponses.find(r => r.id === 'tg-reply-14').ai_payment_method, 'cash');
+  assert.equal(data.invoices.find(i => i.id === 'inv-1006').promise_confirmed, false);
+  assert.equal(data.payments.length, 15);
+  assert.ok(getAttention(data, 'biz-001', '2026-10-22').some(i => i.target === 'tg-reply-14'));
+});
+
+test('caption classification and receipt processing both run', async t => {
+  const backend = fixture(t, { classifyReply: async () => analysis(['payment_claim'], null) });
+  await send(backend);
+  const message = update(15, 123456, 900); message.message.caption = 'Already transferred';
+  await backend.receive(message);
+  const data = backend.snapshot();
+  assert.equal(data.customerResponses.find(r => r.id === 'tg-reply-15').ai_state, 'complete');
+  assert.equal(data.receipts.find(r => r.id === 'tg-15').status, 'recorded');
+  assert.equal(data.invoices.find(i => i.id === 'inv-1006').verification_hold, false);
+});
+
+test('attention includes non-overdue verification, suppresses missed blame under holds, and sorts all items', t => {
+  const backend = fixture(t);
+  store.updateInvoice('inv-1003', { verification_hold: true, promise_confirmed: true, promise_to_pay_date: '2026-10-19' });
+  const items = getAttention(backend.snapshot(), 'biz-001', '2026-10-20');
+  assert.ok(items.some(i => i.invoiceId === 'inv-1003' && i.kind === 'verification'));
+  assert.ok(!items.some(i => i.invoiceId === 'inv-1003' && i.kind === 'missed_promise'));
+  assert.equal(items[0].priority, 'High');
+  assert.ok(items.length > 8);
+});
+
+test('missed promises appear after end of day without invoice due date or manual checks', t => {
+  const backend = fixture(t);
+  store.updateInvoice('inv-1003', { promise_confirmed: true, promise_to_pay_date: '2026-10-20' });
+  assert.ok(!getAttention(backend.snapshot(), 'biz-001', '2026-10-20').some(i => i.kind === 'missed_promise' && i.invoiceId === 'inv-1003'));
+  store.setDemoDate('2026-10-21'); backend.monitor(); backend.monitor();
+  const data = backend.snapshot();
+  assert.ok(getAttention(data, 'biz-001', '2026-10-21').some(i => i.kind === 'missed_promise' && i.invoiceId === 'inv-1003'));
+  assert.equal(data.activityEvents.filter(e => e.invoice_id === 'inv-1003' && e.event_type === 'missed_promise').length, 1);
+});
+
+test('declining a new proposal preserves an existing confirmed promise', async t => {
+  const backend = fixture(t, { classifyReply: async () => analysis() }); await send(backend);
+  await backend.receive(reply(16, 'I will pay tonight'));
+  actions.confirmPromise('inv-1006', '2026-10-25', true, 'Siti Aishah');
+  assert.equal(actions.reviewCustomerPromise('tg-reply-16', '', false, 'Siti Aishah').success, true);
+  assert.equal(store.getStore().invoices.find(i => i.id === 'inv-1006').promise_to_pay_date, '2026-10-25');
+});
+
+test('pending and failed classification pause reminders until seller review', async t => {
+  const backend = fixture(t, { classifyReply: async () => { throw new Error('Ollama timeout'); } });
+  await send(backend); await backend.receive(reply(17, 'Please check my payment'));
+  const { isReminderPaused } = require('../.server-build/lib/reminderEngine.js');
+  const invoice = store.getStore().invoices.find(i => i.id === 'inv-1006');
+  assert.equal(isReminderPaused(invoice, '2026-10-22').paused, true);
+  store.updateCustomerResponse('tg-reply-17', { review_status: 'reviewed' });
+  assert.equal(isReminderPaused(invoice, '2026-10-22').paused, false);
+});
+
+test('partial promised amount can be fulfilled while the invoice remains unpaid', async t => {
+  const backend = fixture(t, { classifyReply: async () => analysis(['payment_promise'], 'Friday', 500) });
+  await send(backend); await backend.receive(reply(18, 'I will pay 500 Friday'));
+  assert.equal(actions.reviewCustomerPromise('tg-reply-18', '2026-10-23', true, 'Siti Aishah', 500).success, true);
+  assert.equal(actions.reviewCustomerPromise('tg-reply-18', '2026-10-24', true, 'Siti Aishah', 500).success, false);
+  store.setDemoDate('2026-10-24');
+  actions.recordPayment('inv-1006', 500, '2026-10-23', 'bank_transfer', 'PROMISED-PART', 'Siti Aishah');
+  const data = backend.snapshot();
+  assert.notEqual(data.invoices.find(i => i.id === 'inv-1006').status, 'paid');
+  assert.ok(!getAttention(data, 'biz-001', '2026-10-24').some(i => i.kind === 'missed_promise' && i.invoiceId === 'inv-1006'));
 });

@@ -29,6 +29,7 @@ export interface Receipt {
   reason: string;
   extraction?: ReceiptExtraction;
   created_at: string;
+  expected_account_name?: string;
 }
 
 export interface SentInvoice {
@@ -38,6 +39,10 @@ export interface SentInvoice {
   chat_id: string;
   message_id: number;
   sent_at: string;
+}
+
+export function receiptReason(reason: string): string {
+  return reason.replace(/\bbeneficiary\b/gi, 'Recipient account name');
 }
 
 export function matchReceipt(data: StoreData, sent: SentInvoice[], chatId: string, businessId: string, replyId?: number) {

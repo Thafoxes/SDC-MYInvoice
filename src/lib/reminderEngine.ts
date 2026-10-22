@@ -6,6 +6,7 @@ import {
   getStore, computeStatus, addFollowUpAction, addActivity, addNotificationRecord,
   updateInvoice, DEMO_BUSINESS_ID, DEMO_BUSINESS_NAME,
 } from './store';
+import { notifyMissedPromises, replyNeedsReview } from './attention';
 import { subtractMoney, sumMoney, daysOverdue, daysBetween, formatMYR } from './format';
 
 export interface CheckpointResult {
@@ -41,6 +42,7 @@ export function isReminderPaused(inv: Invoice, today: string): { paused: boolean
   if (inv.status === 'paid') return { paused: true, reason: 'Invoice is fully paid' };
   if (inv.dispute_active) return { paused: true, reason: 'Dispute is active' };
   if (inv.verification_hold) return { paused: true, reason: 'Payment verification pending' };
+  if (replyNeedsReview(getStore(), inv.id, inv.business_id)) return { paused: true, reason: 'Customer reply awaiting review' };
   if (inv.promise_confirmed && inv.promise_to_pay_date && inv.promise_to_pay_date >= today) {
     return { paused: true, reason: 'Confirmed payment promise has not expired' };
   }
@@ -96,6 +98,7 @@ export function generateReminderMessage(inv: InvoiceWithCustomer, checkpoint: nu
 export function runInvoiceCheck(businessId: string = DEMO_BUSINESS_ID, businessName: string = DEMO_BUSINESS_NAME): { prepared: number; escalated: number; skipped: number; details: string[] } {
   const data = getStore();
   const todayStr = data.demoState.simulated_date;
+  notifyMissedPromises(data, businessId, todayStr);
 
   // First update statuses
   for (const inv of data.invoices) {
@@ -134,15 +137,6 @@ export function runInvoiceCheck(businessId: string = DEMO_BUSINESS_ID, businessN
     const cp = determineCheckpoint(inv, today);
     if (!cp) { skipped++; continue; }
 
-    // A missed confirmed promise is an exception, independently of regular checkpoints.
-    if (inv.promise_confirmed && inv.promise_to_pay_date && inv.promise_to_pay_date < today && outstanding > 0) {
-      const key = `Missed promise ${inv.promise_to_pay_date}`;
-      const alreadyReported = getStore().activityEvents.some(e => e.business_id === businessId && e.invoice_id === inv.id && e.event_type === 'missed_promise' && e.description?.includes(key));
-      if (!alreadyReported) {
-        addActivity(businessId, inv.id, 'missed_promise', 'system', 'system', `${key} for ${inv.invoice_number}; seller review required`);
-        addNotificationRecord(businessId, 'Missed payment promise', `${inv.invoice_number} promised for ${inv.promise_to_pay_date} remains unpaid. Seller review required.`, 'exception', 'action-center');
-      }
-    }
     const pause = isReminderPaused(inv, today);
     if (pause.paused) { skipped++; details.push(`${inv.invoice_number}: paused — ${pause.reason}`); continue; }
 

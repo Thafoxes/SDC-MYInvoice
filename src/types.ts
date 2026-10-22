@@ -45,6 +45,8 @@ export interface Invoice {
   verification_hold: boolean;
   promise_to_pay_date: string | null;
   promise_confirmed: boolean;
+  promise_amount?: number | null;
+  promise_baseline_paid?: number;
   created_at: string;
 }
 
@@ -93,8 +95,8 @@ export interface FollowUpAction {
 export interface CustomerResponse {
   id: string;
   business_id: string;
-  invoice_id: string;
-  customer_id: string;
+  invoice_id: string | null;
+  customer_id: string | null;
   follow_up_action_id: string | null;
   message: string;
   ai_category: string | null;
@@ -103,6 +105,19 @@ export interface CustomerResponse {
   ai_suggested_action: string | null;
   review_status: ReviewStatus;
   created_at: string;
+  source_update_id?: number;
+  source_chat_id?: string;
+  source_message_id?: number;
+  sent_at?: string;
+  ai_state?: 'processing' | 'complete' | 'failed';
+  ai_flags?: string[];
+  ai_date_phrase?: string | null;
+  ai_date_note?: string;
+  ai_promised_amount?: number | null;
+  ai_payment_method?: string | null;
+  promise_review?: 'pending' | 'confirmed' | 'declined';
+  promise_reviewed_date?: string | null;
+  promise_reviewed_amount?: number | null;
 }
 
 export interface ActivityEvent {

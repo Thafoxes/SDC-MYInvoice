@@ -1,6 +1,6 @@
 # Local Telegram receipt test
 
-This optional mode connects the Vue demo to a loopback Node API, SQLite, Telegram long polling, Docling OCR and **`gemma4:31b-cloud`** through Ollama. The AI Assistant also uses this model when enabled. Use synthetic receipts and a dedicated test bot.
+This optional mode connects the Vue demo to a loopback Node API, SQLite, Telegram long polling, Docling OCR and **`gemma4:31b`** through the direct Ollama cloud API. The AI Assistant also uses this model when enabled. Use synthetic receipts and a dedicated test bot.
 
 ## Setup
 
@@ -18,20 +18,14 @@ This optional mode connects the Vue demo to a loopback Node API, SQLite, Telegra
 
    - `VITE_TELEGRAM_ENABLED=true`
    - `TELEGRAM_BOT_TOKEN` from your dedicated BotFather test bot.
-   - `OLLAMA_MODEL=gemma4:31b-cloud`
-   - `OLLAMA_HOST=http://localhost:11434`
+   - `OLLAMA_MODEL=gemma4:31b`
+   - `OLLAMA_API_KEY` from https://ollama.com/settings/keys (server-side only)
    - `DOCLING_PYTHON` to the OCR environment's Python executable.
    - `RECEIPT_BENEFICIARY` to the exact account name on your synthetic receipt. Missing or mismatched names require review.
 
    Never prefix secrets with `VITE_`; those variables are public browser configuration. The supported UI business is the seeded `biz-001`.
 
-4. Start Ollama if it is not already running (`ollama serve`). Sign into cloud models in the Ollama app/CLI, then register the model:
-
-   ```powershell
-   ollama pull gemma4:31b-cloud
-   ```
-
-   The cloud model uses the internet and sends submitted text to Ollama's cloud, even though your app calls localhost.
+4. The backend calls `https://ollama.com/api/chat` directly with your API key. You do not need a local Ollama installation, `ollama serve`, model downloads or local sign-in. The API model name is `gemma4:31b`, without the `-cloud` suffix. Requests require internet access and send submitted text to Ollama’s cloud. Remove the old `OLLAMA_HOST` setting; it is no longer used.
 
 5. Run these in separate terminals:
 
@@ -51,9 +45,23 @@ This optional mode connects the Vue demo to a loopback Node API, SQLite, Telegra
 5. Reply to that invoice message with a synthetic bank-transfer receipt as PDF, PNG or JPEG. Telegram photos are also accepted. Use a completed transfer, the expected beneficiary, a unique transaction reference and the exact outstanding balance.
 6. Watch Action Center. An exact match records a synthetic payment and settles the invoice; other outcomes show **Requires seller attention**. Attachments can be downloaded for review. Marking a receipt reviewed does **not** record a payment or release a hold. Use View Invoice to record a seller-verified payment or review the hold separately.
 
-For the committed fixtures in `tests/fixtures`, temporarily set `RECEIPT_BENEFICIARY=Test Seller` and restart the API. They contain a synthetic RM1,800 transfer dated 2026-10-20, reference `TEST-TRANSFER-1`. Test each fixture with fresh demo data; reusing either receipt must not record another payment. Resetting clears chat links, so link again afterwards.
+For the committed fixtures in `tests/fixtures`, the PNG uses recipient `Test Seller` and the PDF uses `Siti Aishah`. Set `RECEIPT_BENEFICIARY` to the name expected for that fixture and restart the API. Both contain a synthetic RM1,800 transfer dated 2026-10-20, reference `TEST-TRANSFER-1`. Test each fixture with fresh demo data; reusing either receipt must not record another payment. Resetting clears chat links, so link again afterwards.
 
 ## Matching and failure handling
+
+### Customer replies and promised payments
+
+Ordinary Telegram text and attachment captions are now saved before Gemma classifies them. Payment claims, promises, extension requests, cash/other-method requests, instalments and disputes can have multiple flags in the same reply. AI never approves a new arrangement or records a payment from text. Unmatched replies and AI failures stay in Customer Responses for seller review; processing, failed or unclear replies pause reminders until reviewed.
+
+Dashboard and Action Center share **Needs your attention**, covering all invoices, including invoices not overdue, plus unmatched replies/receipts. Verification comes before missed-promise warnings. Dashboard shows the first eight items by urgency with a View all control. Review links open the relevant message, receipt or invoice.
+
+Relative dates use the original Telegram message time in the business timezone. Today/tonight means end of that day; tomorrow means the next day; end of the week proposes Sunday, end of day. Vague periods such as “next week” remain unresolved. The seller can edit the proposed date and optional promised amount, then confirm or decline. Confirming leaves the invoice due date unchanged. Declining a new proposal does not remove an older confirmed promise. For “paid part, remainder Friday,” review/record the claimed transfer and release its verification hold before confirming the remainder, so the older transfer is not counted toward a new promise.
+
+Only confirmed, unfulfilled promises become missed after the promised date ends. Alerts refresh normally, are checked every 30 seconds and on restart, and are deduplicated. Recorded partial payments can fulfil an explicitly agreed partial promise without settling the whole invoice. A pending payment verification or unclear reply suppresses missed-payment blame until reviewed.
+
+Live Telegram mode uses the business's current calendar date; simulated-date controls are available only in browser-only mode. **Mark message reviewed** and **Mark reviewed** on a receipt do not post a payment or release a payment hold. Use the invoice's **Record verified payment** form for a seller-verified transfer. After a partial transfer, finish the bank review explicitly to release its hold.
+
+The receipt panel labels the **Seller’s receiving account name**, shows the configured expected name beside the recipient name read from each receipt, and explains the result. This is the seller receiving money, not the buyer. `RECEIPT_BENEFICIARY` remains the configuration source; no secrets are exposed to the browser.
 
 - The reply-to Telegram message identifies the invoice first. Without a reply, the service uses that customer's **latest successfully delivered invoice message**, then checks its balance. It does not silently switch to an older unpaid invoice when the latest is paid.
 - Matching stays within the configured business and linked customer. Unknown chats and missing invoice mappings are retained as attention records.
@@ -72,7 +80,7 @@ Set `VITE_TELEGRAM_ENABLED=false` and restart Vite to return to the original bro
 npm run test:logic
 npm run test:telegram
 npm run build
-# Opt-in: actual OCR and cloud inference; uses synthetic fixtures and mocks Telegram delivery.
+# Opt-in: actual OCR/cloud inference and an end-of-week reply/attention test; Telegram delivery is mocked.
 npm run test:telegram:live
 ```
 

@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { randomUUID, createHash } = require('node:crypto');
+const { createHash } = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { createServer } = require('node:http');
 const store = require('../.server-build/lib/store.js');
@@ -8,6 +8,8 @@ const actions = require('../.server-build/lib/actions.js');
 const reminders = require('../.server-build/lib/reminderEngine.js');
 const { matchReceipt, validateExtraction, receiptProblem } = require('../.server-build/lib/receipts.js');
 const integrations = require('./integrations.cjs');
+const { validateReplyAnalysis, businessDate } = require('../.server-build/lib/replyAnalysis.js');
+const { notifyMissedPromises } = require('../.server-build/lib/attention.js');
 
 function createBackend({ directory = path.resolve('.local-data'), api = integrations } = {}) {
   fs.mkdirSync(directory, { recursive: true });
@@ -25,7 +27,20 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
   const receipts = () => list('receipts');
   const sent = () => list('sent');
   const saveReceipt = receipt => db.prepare('INSERT INTO receipts VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(receipt.id, JSON.stringify(receipt));
-  const snapshot = () => ({ ...store.getStore(), receipts: receipts().sort((a, b) => b.created_at.localeCompare(a.created_at)) });
+  const timezone = store.getStore().businesses.find(b => b.id === businessId)?.timezone || 'Asia/Kuala_Lumpur';
+  function monitor() {
+    transaction(() => {
+      if (api === integrations) {
+        const today = businessDate(new Date(), timezone);
+        if (store.getStore().demoState.simulated_date !== today) store.setDemoDate(today);
+      }
+      notifyMissedPromises(store.getStore(), businessId, store.getStore().demoState.simulated_date);
+    });
+  }
+  const snapshot = () => {
+    monitor();
+    return { ...store.getStore(), receipts: receipts().sort((a, b) => b.created_at.localeCompare(a.created_at)) };
+  };
   function transaction(fn) {
     const previous = structuredClone(store.getStore());
     db.exec('BEGIN IMMEDIATE');
@@ -47,7 +62,36 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
     for (const receipt of receipts().filter(r => r.status === 'processing')) attention(receipt, 'Processing interrupted; seller review required');
     for (const fu of store.getStore().followUpActions.filter(f => f.send_state === 'sending'))
       store.updateFollowUp(fu.id, { send_state: 'failed', delivery_status: 'Delivery outcome unknown after restart; check Telegram before retrying' });
+    for (const response of store.getStore().customerResponses.filter(r => r.ai_state === 'processing'))
+      store.updateCustomerResponse(response.id, { ai_state: 'failed', ai_suggested_action: 'Classification was interrupted. Review the original message.', review_status: 'pending' });
   });
+  monitor();
+
+  async function receiveReply(update, message) {
+    const text = (message.text || message.caption || '').trim();
+    if (!text) return;
+    const id = `tg-reply-${update.update_id}`;
+    if (store.getStore().customerResponses.some(r => r.id === id || (r.source_chat_id === String(message.chat.id) && r.source_message_id === message.message_id))) return;
+    const match = matchReceipt(store.getStore(), sent(), String(message.chat.id), businessId, message.reply_to_message?.message_id);
+    transaction(() => store.update(data => data.customerResponses.unshift({
+      id, business_id: businessId, customer_id: match.customer?.id || null, invoice_id: match.invoice?.id || null,
+      follow_up_action_id: null, message: text.slice(0, 4096), ai_category: null, ai_confidence: null,
+      ai_extracted_date: null, ai_suggested_action: 'Reading customer reply…', review_status: 'pending',
+      created_at: new Date().toISOString(), sent_at: new Date((message.date || Date.now() / 1000) * 1000).toISOString(),
+      source_update_id: update.update_id, source_chat_id: String(message.chat.id), source_message_id: message.message_id,
+      ai_state: 'processing',
+    })));
+    try {
+      if (!match.invoice) throw new Error(match.reason);
+      const analysis = validateReplyAnalysis(await api.classifyReply(text), text);
+      const current = matchReceipt(store.getStore(), sent(), String(message.chat.id), businessId, message.reply_to_message?.message_id);
+      if (current.invoice?.id !== match.invoice.id || current.customer?.id !== match.customer?.id) throw new Error('Invoice or chat association changed while reading the reply');
+      transaction(() => actions.applyCustomerReply(id, analysis, businessId));
+    } catch (error) {
+      transaction(() => store.updateCustomerResponse(id, { ai_state: 'failed', ai_suggested_action: error.message, review_status: 'pending' }));
+    }
+    transaction(() => store.addNotificationRecord(businessId, 'Customer invoice reply', 'A customer reply is available in Action Center.', 'response', 'action-center'));
+  }
 
   async function receive(update) {
     const message = update.message;
@@ -56,6 +100,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
       await api.telegram('sendMessage', { chat_id: String(message.chat.id), text: `Your test chat ID is ${message.chat.id}. Ask the seller to link it in Action Center, then reply to the invoice message with your test receipt.` });
       return;
     }
+    await receiveReply(update, message);
     const file = message.document || message.photo?.at(-1);
     if (!file) return;
     const id = `tg-${update.update_id}`;
@@ -66,6 +111,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
       id, business_id: businessId, customer_id: match.customer?.id ?? null, invoice_id: match.invoice?.id ?? null,
       chat_id: chatId, message_id: message.message_id, reply_to_message_id: message.reply_to_message?.message_id,
       file_id: file.file_id, file_unique_id: file.file_unique_id, status: 'processing', reason: '', created_at: new Date().toISOString(),
+      expected_account_name: process.env.RECEIPT_BENEFICIARY || '',
     };
     transaction(() => {
       saveReceipt(receipt);
@@ -88,7 +134,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
         const currentMatch = matchReceipt(data, sent(), chatId, businessId, message.reply_to_message?.message_id);
         if (currentMatch.invoice?.id !== receipt.invoice_id || currentMatch.customer?.id !== receipt.customer_id) { attention(receipt, 'Customer or invoice association changed during processing'); return; }
         if (receipts().some(r => r.id !== id && r.status === 'recorded' && (r.hash === receipt.hash || r.file_unique_id === receipt.file_unique_id))) { attention(receipt, 'Duplicate receipt already recorded'); return; }
-        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        const today = businessDate(new Date(), timezone);
         const problem = receiptProblem(data, receipt.invoice_id, receipt.extraction, process.env.RECEIPT_BENEFICIARY || '', today);
         if (problem) { attention(receipt, problem); return; }
         // shortcut: synthetic local ledger only; require bank reconciliation before real-money use.
@@ -136,9 +182,9 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
   }
 
   const commands = {
-    ...Object.fromEntries(['approveFollowUp', 'rejectFollowUp', 'editFollowUpMessage', 'resolveVerificationHold', 'resolveDispute', 'confirmPromise', 'simulateCustomerResponse', 'recordPayment'].map(key => [key, actions[key]])),
+    ...Object.fromEntries(['approveFollowUp', 'rejectFollowUp', 'editFollowUpMessage', 'resolveVerificationHold', 'resolveDispute', 'confirmPromise', 'reviewCustomerPromise', 'simulateCustomerResponse', 'recordPayment'].map(key => [key, actions[key]])),
     runInvoiceCheck: reminders.runInvoiceCheck,
-    setDemoDate: store.setDemoDate,
+    setDemoDate(date) { if (api === integrations) throw new Error('Telegram mode uses the business current date. Disable Telegram mode to simulate dates.'); store.setDemoDate(date); },
     resetStore() { if (receipts().some(r => r.status === 'processing') || sendBusy) throw new Error('Wait for receipt processing and delivery before resetting'); db.exec("DELETE FROM receipts; DELETE FROM sent; DELETE FROM state WHERE id LIKE 'telegram-link:%'"); return store.resetStore(); },
     markNotificationReadById: store.markNotificationReadById,
     updateCustomerResponse(id, patch) { if (!patch || !['reviewed', 'resolved'].includes(patch.review_status)) throw new Error('Invalid response status'); store.updateCustomerResponse(id, { review_status: patch.review_status }); },
@@ -186,7 +232,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
     const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(body)); };
     if (!/^((localhost|127\.0\.0\.1)(:\d+)?)$/.test(req.headers.host || '') || (req.headers.origin && !origins.has(req.headers.origin))) return json(403, { error: 'Local access only' });
     try {
-      if (req.method === 'GET' && req.url === '/api/state') return json(200, { data: snapshot(), integration: { model: process.env.OLLAMA_MODEL || 'gemma4:31b-cloud', botConfigured: !!process.env.TELEGRAM_BOT_TOKEN, pollingError, lastPollAt } });
+      if (req.method === 'GET' && req.url === '/api/state') return json(200, { data: snapshot(), integration: { model: process.env.OLLAMA_MODEL || 'gemma4:31b', botConfigured: !!process.env.TELEGRAM_BOT_TOKEN, pollingError, lastPollAt, receivingAccountName: process.env.RECEIPT_BENEFICIARY || '' } });
       const attachmentId = /^\/api\/receipts\/(tg-\d+)\/file$/.exec(req.url || '')?.[1];
       if (req.method === 'GET' && attachmentId) {
         const r = receipts().find(x => x.id === attachmentId && x.business_id === businessId);
@@ -200,6 +246,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
       for await (const chunk of req) { raw += chunk; if (raw.length > 32000) return json(413, { error: 'Request too large' }); }
       const { name, args } = JSON.parse(raw);
       if (typeof name !== 'string' || !Array.isArray(args) || args.length > 8) return json(400, { error: 'Invalid command' });
+      monitor();
       if (name === 'sendApprovedFollowUp') return json(200, { result: await sendApproved(...args), data: snapshot() });
       if (name === 'askAiAssistant') {
         if (typeof args[0] !== 'string' || args[0].length > 4000) return json(400, { error: 'Question too long' });
@@ -213,7 +260,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
       return json(200, { result, data: snapshot() });
     } catch (error) { json(400, { error: error.message?.slice(0, 250) || 'Operation failed' }); }
   });
-  return { server, receive, snapshot, sendApproved, transaction, db, poll, stop() { stopping = true; server.close(); } };
+  return { server, receive, snapshot, sendApproved, transaction, db, poll, monitor, stop() { stopping = true; server.close(); } };
 }
 
 module.exports = { createBackend };
@@ -221,4 +268,5 @@ if (require.main === module) {
   const backend = createBackend();
   backend.server.listen(Number(process.env.PORT || 8787), '127.0.0.1', () => console.log('Local Telegram demo API: http://127.0.0.1:8787'));
   backend.poll().catch(error => console.error(error.message));
+  setInterval(() => backend.monitor(), 30000).unref();
 }
