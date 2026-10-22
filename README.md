@@ -3,7 +3,7 @@
 > A seller-controlled invoice follow-up prototype for Malaysian micro and small businesses. NudgeWise tracks outstanding invoices, prepares reminder drafts, records simulated follow-ups, and explains which customer records need attention.
 
 **Current version:** Vue demo v1.1 (Phase 1 reminder safeguards + Phase 2 customer follow-up priorities)  
-**Status:** Synthetic-data prototype with an optional local Telegram receipt integration: Docling OCR → `gemma4:31b-cloud` → invoice matching → demo settlement or seller attention. See [setup and test instructions](server/README.md). Real bank verification and production authentication are not implemented.
+**Status:** Synthetic-data prototype with an optional local Telegram receipt integration: Docling OCR → `gemma4:31b` → invoice matching → demo settlement or seller attention. See [setup and test instructions](server/README.md). Real bank verification and production authentication are not implemented.
 
 ## Team Information
 
@@ -13,8 +13,9 @@
 | Hackathon domain | Domain 2 — Orbyte Smart SME Challenge |
 | SDG focus | SDG 8 — Decent Work and Economic Growth |
 | Team leader | WONG JIA SOON |
-| University | To be confirmed by the team |
-| Team members | To be confirmed by the team |
+| University | UNIVERSITI TEKNOLOGI MALAYSIA |
+| Team members | AHMAD FADRIL, DANIEL, YIBRIW, ZARFIRZAN
+ |
 
 ## Project Links
 
@@ -34,9 +35,12 @@ Malaysian small-business sellers may need to compare invoice records, payment up
 
 ## Implemented Demo Features
 
+- **Telegram customer replies (optional local mode):** Gemma classifies payment claims, promises, extension and payment-method requests. Sellers confirm dates; Dashboard and Action Center share missed-promise and verification alerts across all invoices.
+- **Receipt account-name explanation:** shows the seller’s expected receiving account name alongside the recipient name read from a receipt.
+
 - **Dashboard:** collected/outstanding/overdue metrics, invoice search and filters, charts, and invoice details.
-- **Action Center:** simulated reminder approvals, rejections, customer-response exceptions, and activity history.
-- **AI Assistant page:** **simulated**, invoice-aware responses; it uses `gemma4:31b-cloud` when Telegram integration mode is enabled, and local rules otherwise.
+- **Action Center:** seller reminder approvals, rejections, customer replies, receipt reviews, and activity history.
+- **AI Assistant page:** invoice-aware responses through `gemma4:31b` when Telegram integration mode is enabled, and local rules otherwise.
 - **Reminder safeguards (Phase 1):** due/overdue checkpoints; holds for disputes and unverified payment claims; approval checks; duplicate-checkpoint protection; missed-payment-promise alerts in the demo logic.
 - **Customer priorities (Phase 2):** explainable **Red / Yellow / Green / Grey** classification from synthetic invoice/payment history. Customer priority is separate from the urgency of an operational review.
 - **Demo controls:** simulated business date, invoice checks, payment recording, customer replies, and reset.
@@ -45,11 +49,11 @@ Malaysian small-business sellers may need to compare invoice records, payment up
 ### Not Implemented Yet
 
 - Production Telegram webhooks, customer onboarding and seller authentication. Local polling and manual test-chat linking are implemented.
-- RunPod deployment. Local Ollama with Gemma 4 cloud and receipt-output validation are implemented in optional integration mode.
+- RunPod deployment. Direct Ollama API with Gemma 4 cloud and receipt-output validation are implemented in optional integration mode.
 - Production database and server-side user authentication. The local service uses SQLite and existing demo role rules.
 - Live Orbyte platform integration, real payment verification, and production-grade delivery handling.
 
-**Do not use this prototype with real customer details, credentials, or financial records.** The demo is not a payment-processing service or statutory e-invoice submission system.
+**Use synthetic customer details and financial records.** Keep test-bot credentials in `.env`. The demo is not a payment-processing service or statutory e-invoice submission system.
 
 ## Tech Stack (Current)
 
@@ -62,85 +66,126 @@ Malaysian small-business sellers may need to compare invoice records, payment up
 | Charts | Chart.js + vue-chartjs |
 | Icons | lucide-vue-next (current demo dependency) |
 | Application logic | TypeScript modules in `src/lib/` |
-| Demo persistence | Browser localStorage |
+| Persistence | Browser localStorage (frontend-only) or SQLite (Telegram mode) |
+| Local backend | Node.js 24 built-in HTTP server and SQLite |
+| OCR | Python 3.12 + Docling / RapidOCR |
+| AI | Ollama cloud API → `gemma4:31b` |
+| Messaging | Telegram Bot API with long polling |
 | Logic tests | TypeScript compiler + Node.js built-in test runner |
 
-**Planned architecture (not yet deployed):** Vue frontend → Replit-hosted backend + persistent SQL database → Telegram API for messaging and Ollama (local / RunPod) for AI tasks. The backend will enforce authentication, permissions, approvals, and idempotent sending.
+**How it runs:** Vue frontend → local Node backend → Telegram, SQLite and Ollama’s cloud API. Docling OCR runs locally in Python. **You do not need to install or run Ollama on your computer.**
 
-## Quick Start — Run Locally
+## Local Setup
 
-### Prerequisites
+### 1. Install dependencies (once)
 
-- **Node.js 20 or newer** (the project has been started successfully with Node.js 20.20.2 and npm 10.8.2).
-- **npm** (installed with Node.js).
-- Git (if cloning the repository).
+You need **Node.js 24+**, **Python 3.12**, a Telegram test bot token from [BotFather](https://t.me/BotFather), and an [Ollama API key](https://ollama.com/settings/keys).
 
-Check your installations:
-
-```bash
-node -v
-npm -v
-git --version
-```
-
-### Option A — Clone from GitHub (new teammate)
-
-```bash
-git clone https://github.com/Thafoxes/SDC-MYInvoice.git
-cd SDC-MYInvoice
-npm install
-npm run dev
-```
-
-Open the **Local** URL displayed by Vite, usually **http://localhost:5173/**.
-
-> The GitHub repository must contain the project files and latest commit before teammates can clone this application. The application is currently developed in `~/nudgewise` / `~/SDC-MYInvoice` on the original development machine.
-
-### Option B — Run an existing local checkout (Ubuntu)
-
-```bash
-cd ~/SDC-MYInvoice
-npm install
-npm run dev
-```
-
-To stop the dev server, press **Ctrl+C**. To restart later, run `npm run dev` from the project folder.
-
-### Windows (PowerShell)
+Open PowerShell in the project folder:
 
 ```powershell
-git clone https://github.com/Thafoxes/SDC-MYInvoice.git
-cd SDC-MYInvoice
+cd D:\Github\SDC-test
 npm install
-npm run dev
+py -3.12 -m venv .venv-telegram
+.venv-telegram/Scripts/python.exe -m pip install -r server/requirements.txt
 ```
 
-### Available npm Commands
+If `.venv-telegram` is already set up, reuse it. On macOS/Linux, use `python3.12 -m venv .venv-telegram` and `.venv-telegram/bin/python -m pip install -r server/requirements.txt` instead.
 
-| Command | Purpose |
+### 2. Add your keys to `.env`
+
+Create the file if it does not exist:
+
+```powershell
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+Open `.env` and fill in these settings. Keep your existing Telegram token if it is already there:
+
+```dotenv
+VITE_TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+OLLAMA_API_KEY=your_ollama_api_key
+OLLAMA_MODEL=gemma4:31b
+DOCLING_PYTHON=.venv-telegram/Scripts/python.exe
+RECEIPT_BENEFICIARY=Kedai Maju Jaya Sdn Bhd
+```
+
+- `OLLAMA_API_KEY`: your private key. The backend sends requests to `https://ollama.com/api/chat`.
+- `OLLAMA_MODEL`: use `gemma4:31b` for the direct API. This is the Gemma 4 31B cloud model; do not use the local client's `-cloud` suffix here.
+- `DOCLING_PYTHON`: the OCR environment’s Python executable. On macOS/Linux, use `.venv-telegram/bin/python`.
+- `RECEIPT_BENEFICIARY`: **your receiving bank account name as the seller**, not the buyer’s name. A different name on the receipt requires human review.
+
+Never commit `.env` or put API keys in `VITE_` variables. The backend reads the keys; the browser does not receive them. Internet access is required for Telegram and Ollama cloud. See [Ollama API documentation](https://docs.ollama.com/cloud).
+
+### 3. Start the backend — Terminal 1
+
+```powershell
+cd D:\Github\SDC-test
+npm run server
+```
+
+Leave this terminal open. It should show:
+
+```text
+Local Telegram demo API: http://127.0.0.1:8787
+```
+
+The backend handles Telegram, OCR, invoice updates and Ollama API requests. The first receipt can take longer while OCR models initialize or download.
+
+### 4. Start the frontend — Terminal 2
+
+```powershell
+cd D:\Github\SDC-test
+npm run dev -- --host 127.0.0.1 --strictPort
+```
+
+Open [Dashboard](http://127.0.0.1:5173/#/dashboard) or [Action Center](http://127.0.0.1:5173/#/action-center). Keep both terminals open.
+
+**Next time:** you only need the two startup commands above. No `ollama serve`, model download or local Ollama sign-in is needed.
+
+### 5. Connect Telegram and try it
+
+1. Send `/start` in a private chat with your bot. It replies with your chat ID.
+2. In **Action Center → Link a test customer**, select the customer whose invoice you are testing and enter that ID. One chat can belong to only one customer.
+3. Approve that customer’s invoice reminder, then click **Send to Telegram**. Use **Demo Controls → Run Invoice Check** to prepare eligible reminders if needed.
+4. Reply to the invoice message with a synthetic PDF/image receipt or a message such as “I will pay by the end of the week.”
+5. Check **Customer Responses** and **Needs your attention**. Sellers confirm proposed dates and review payment claims. An exact receipt match can settle a synthetic invoice automatically.
+
+The buyer’s chat must be explicitly linked; seeded chat IDs are sample values. For detailed matching rules, receipt fixtures and review actions, see [the integration guide](server/README.md).
+
+### Stop or restart
+
+Press **Ctrl+C** in the relevant terminal. After editing `.env`, stop and restart the backend. If you changed `VITE_TELEGRAM_ENABLED`, restart the frontend too. If an agent started the backend, ask it to stop or restart that process before starting a second copy.
+
+### Common problems
+
+| Problem | Fix |
 | --- | --- |
-| `npm run dev` | Start Vite's development server |
-| `npm run typecheck` | Check Vue and TypeScript types |
-| `npm run build` | Type-check, then build the app into `dist/` |
-| `npm run preview` | Serve the compiled build for local preview |
-| `npm run test:logic` | Run the framework-independent business-logic regression tests |
+| Local API unavailable | Start `npm run server` in Terminal 1. |
+| Missing Ollama key / access denied | Set a valid `OLLAMA_API_KEY` in `.env` and restart the backend. |
+| Ollama API request fails | Check internet access, account limits and `OLLAMA_MODEL=gemma4:31b`. |
+| Bot does not reply | Check `TELEGRAM_BOT_TOKEN`, restart the backend, and check polling errors in Action Center. Use a test bot without a webhook. |
+| Seeded chat ID / chat already linked | Link the correct customer. If your ID is already linked to Ahmad, test Ahmad’s invoice. |
+| Recipient name differs | Check the receipt recipient against `RECEIPT_BENEFICIARY`. It is the seller’s account name. |
+| OCR fails | Check Python 3.12 and `DOCLING_PYTHON`; install `server/requirements.txt` in that environment. |
+| Port already in use | Stop the existing frontend/backend in its terminal, or ask the agent that started it. |
 
-Recommended checks after setup:
+### Optional: frontend only
 
-```bash
+Set `VITE_TELEGRAM_ENABLED=false` in `.env`, then run only the frontend command. This mode uses browser storage and simulated AI; Telegram mode uses separate SQLite data in `.local-data/`.
+
+### Checks
+
+```powershell
 npm run test:logic
+npm run test:telegram
 npm run build
 ```
 
-The logic tests use a temporary **`.test-build/`** directory and cover the local business rules; they do **not** validate Telegram delivery, browser rendering, or external API integrations.
+Optional: `npm run test:telegram:live` uses real OCR and your Ollama API key with synthetic fixtures. It mocks Telegram delivery, so no messages are sent.
 
-### Common Setup Problems
-
-- **`npm: command not found`**: install a supported Node.js release that includes npm.
-- **Port 5173 already in use**: Vite may choose another port. Open the address shown in the terminal.
-- **`npm install` reports vulnerabilities**: inspect them using `npm audit`; avoid automatically using `npm audit fix --force`, which can introduce breaking upgrades.
-- **`npm install` warns about `lucide-vue-next` deprecation**: it is an existing dependency; migration can be handled separately.
-- **Demo changes disappear after browser-data clearing**: the app stores demo state in localStorage; use Demo Controls → Reset to restore the shipped scenarios.
+Keep this prototype on localhost and use synthetic financial records. AI and receipts cannot verify that bank funds arrived.
 
 ## Project Structure
 
@@ -152,6 +197,9 @@ SDC-MYInvoice/
 ├── vite.config.ts
 ├── tailwind.config.js
 ├── tsconfig.json
+├── tsconfig.server.json
+├── server/                     # local API, Docling worker and integration guide
+├── .env.example                # settings template; real .env stays private
 ├── tsconfig.logic-tests.json
 ├── src/
 │   ├── main.ts
@@ -169,16 +217,23 @@ SDC-MYInvoice/
 │   │   ├── DemoControls.vue
 │   │   ├── StatusBadge.vue
 │   │   └── BaseModal.vue
+│   ├── services/commands.ts    # browser-to-backend commands
 │   ├── composables/useDemoStore.ts
 │   └── lib/
-│       ├── data.ts               # synthetic seed data
-│       ├── store.ts              # local demo state
+│       ├── data.ts               # data access compatibility
+│       ├── store.ts              # synthetic seed and persistence adapter
+│       ├── receipts.ts           # invoice/receipt matching
+│       ├── replyAnalysis.ts      # validated reply fields and date resolution
+│       ├── attention.ts          # shared dashboard/review queue
 │       ├── actions.ts            # invoice/reminder actions
 │       ├── reminderEngine.ts     # checkpoint and hold rules
 │       ├── priorityEngine.ts     # customer follow-up priorities
 │       ├── aiService.ts          # simulated assistant
 │       └── format.ts
 ├── tests/
+│   ├── telegram.test.cjs
+│   ├── telegram-live.cjs
+│   ├── fixtures/
 │   ├── logic.test.cjs
 │   └── setup-test-build.cjs
 ├── PHASE_1_2_CHANGELOG.md
@@ -187,35 +242,7 @@ SDC-MYInvoice/
 └── README.md
 ```
 
-The project may also include other repository metadata such as `.codex/` and `.gitignore`. Do not commit `node_modules/`, `dist/`, `.test-build/`, or `.env` files.
-
-## Running on Replit — Planned
-
-Replit is a target development/deployment environment, **not yet verified as a running deployment for this version**.
-
-1. Import the GitHub repository into a Replit project.
-2. Ensure Replit provides a compatible Node.js/npm environment.
-3. Run `npm install`, then `npm run dev` (or configure the project's run command accordingly).
-4. Open the web preview on the port Vite exposes. The Vite dev server is configured to bind to `0.0.0.0`.
-5. Test the app in Replit before claiming deployment or adding submission proof.
-
-**No Replit/Telegram/RunPod API keys are needed to run the current local demo.** Any future API credentials must be stored securely in Replit Secrets or server-side environment variables, never in browser code or Git.
-
-## RunPod and Ollama — Planned
-
-The future AI integration will use **Gemma 4** through Ollama for reminder drafting, customer-response classification, and summarizing verified evidence. The expected arrangement is:
-
-```text
-Vue seller dashboard
-        ↓
-Application backend (planned on Replit)
-        ├── SQL database and invoice rules
-        ├── Telegram approval / messaging (planned)
-        └── Authenticated Ollama endpoint (local for local testing,
-            RunPod GPU Pod for hosted inference)
-```
-
-RunPod is **not connected in this version**. A deployed Replit backend cannot access an Ollama service running on a developer's laptop via `localhost`. The hosted endpoint will need a secure network connection and appropriate authentication.
+The project may also include other repository metadata such as `.codex/` and `.gitignore`. Do not commit `node_modules/`, `dist/`, `.test-build/`, `.server-build/`, `.local-data/`, `.venv-telegram/`, or `.env` files.
 
 ## Development and Contribution
 
@@ -242,9 +269,12 @@ Before staging or pushing, check that no `.env`, credentials, personal data, or 
 - [x] Phase 1 reminder/approval safeguards implemented in demo logic.
 - [x] Phase 2 rule-based customer priority classification implemented.
 - [ ] Full browser regression and complete v1.1 acceptance testing.
-- [ ] Persistent SQL backend and server-side permissions.
-- [ ] Telegram seller approvals and opted-in customer messaging.
-- [ ] Gemma 4 / Ollama integration, local and hosted inference tests, and fallback verification.
+- [x] Local SQLite backend for Telegram integration.
+- [ ] Production database and authenticated server-side permissions.
+- [x] Local seller-approved Telegram delivery and manually linked test chats.
+- [ ] Production customer onboarding and delivery handling.
+- [x] Direct Ollama cloud API with Gemma 4, receipt OCR, customer-reply classification and synthetic integration tests.
+- [ ] Hosted inference and production acceptance testing.
 - [ ] Simulated Orbyte connector interface and second-business isolation demonstration.
 - [ ] Replit and RunPod proof of use, if required by the submission rules.
 - [ ] Slides, demo video, and final submission documents.

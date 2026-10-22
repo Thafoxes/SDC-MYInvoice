@@ -11,7 +11,7 @@
     "test:logic": "tsc -p tsconfig.logic-tests.json && node tests/setup-test-build.cjs && node --test tests/logic.test.cjs",
     "server:build": "tsc -p tsconfig.server.json && node server/build.cjs",
     "server": "npm run server:build && node --env-file-if-exists=.env server/app.cjs",
-    "test:telegram": "npm run server:build && node --test tests/telegram.test.cjs",
+    "test:telegram": "npm run server:build && node --test tests/telegram.test.cjs tests/ollama.test.cjs",
     "test:telegram:live": "npm run server:build && node --env-file-if-exists=.env tests/telegram-live.cjs"
   },
   "dependencies": {
