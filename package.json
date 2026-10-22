@@ -9,11 +9,12 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "vue-tsc --noEmit",
-    "test:logic": "tsc -p tsconfig.logic-tests.json && node tests/setup-test-build.cjs && node --test tests/logic.test.cjs tests/language.test.cjs",
+    "test:logic": "tsc -p tsconfig.logic-tests.json && node tests/setup-test-build.cjs && node --test tests/logic.test.cjs tests/language.test.cjs tests/customer-orders.test.cjs",
     "server:build": "tsc -p tsconfig.server.json && node server/build.cjs",
     "server": "npm run server:build && node --env-file-if-exists=.env server/app.cjs",
     "test:telegram": "npm run server:build && node --test tests/telegram.test.cjs tests/ollama.test.cjs tests/rewrite.test.cjs",
     "test:ui": "node --test tests/presentation.test.cjs tests/tone.test.cjs",
+    "test:customers": "npm run server:build && node --test tests/customer-orders-server.test.cjs",
     "test:telegram:live": "npm run server:build && node --env-file-if-exists=.env tests/telegram-live.cjs"
   },
   "dependencies": {

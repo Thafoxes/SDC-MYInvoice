@@ -31,6 +31,7 @@ export interface Customer {
   email: string | null;
   /** Language for reminders: 'en' | 'ms' | 'zh'. Missing means English. */
   preferred_language?: 'en' | 'ms' | 'zh' | null;
+  address?: string | null;
 }
 
 export interface Invoice {
@@ -44,6 +45,8 @@ export interface Invoice {
   status: InvoiceStatus;
   labels: string[];
   dispute_active: boolean;
+  /** Retain the new-order settlement rule after the dispute is resolved. */
+  settlement_required?: boolean;
   verification_hold: boolean;
   promise_to_pay_date: string | null;
   promise_confirmed: boolean;
@@ -62,6 +65,25 @@ export interface Payment {
   reference: string | null;
   verification_status: VerificationStatus;
   created_at: string;
+}
+
+export interface OrderBlocker {
+  invoice_id: string;
+  invoice_number: string;
+  balance: number;
+  reason: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  business_id: string;
+  customer_id: string;
+  reference: string;
+  status: 'draft' | 'approved';
+  created_at: string;
+  approved_at?: string;
+  approved_by?: string;
+  override?: { reason: string; actor: string; approved_at: string; blockers: OrderBlocker[] };
 }
 
 export interface Credit {

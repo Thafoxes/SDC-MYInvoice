@@ -14,6 +14,8 @@ import type { InvoiceWithCustomer } from '@/types';
 import { useRoute } from 'vue-router';
 import { LANGS, customerLang, type Lang } from '@/lib/reminderTemplates';
 import { setCustomerLanguage } from '@/services/commands';
+import CustomerIntake from '@/components/CustomerIntake.vue';
+import { getOrderEligibility } from '@/lib/customerOrders';
 
 const { data, refreshStore } = useDemoStore();
 const currentUser = computed(() => data.value.users.find(u => u.id === DEMO_SELLER_ID)!);
@@ -72,6 +74,12 @@ function langOf(customerId: string): Lang {
   return customerLang(data.value.customers.find(c => c.id === customerId));
 }
 const langNotice = ref('');
+const intakeCustomerId = ref<string | null>(null);
+const intakeCustomer = computed(() => data.value.customers.find(customer => customer.id === intakeCustomerId.value));
+const intakeEligibility = computed(() => {
+  void data.value;
+  return intakeCustomerId.value ? getOrderEligibility(intakeCustomerId.value, DEMO_BUSINESS_ID) : null;
+});
 let langTimer: ReturnType<typeof setTimeout> | undefined;
 async function changeLang(customerId: string, name: string, event: Event) {
   const lang = (event.target as HTMLSelectElement).value;
@@ -91,6 +99,12 @@ function outstandingFor(customerId: string) {
 
 <template>
   <div class="space-y-5">
+    <CustomerIntake @selected="intakeCustomerId = $event" />
+    <div v-if="intakeCustomer && intakeEligibility" class="rounded-lg border p-4 text-sm" :class="intakeEligibility.allowed ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'">
+      <p class="font-semibold">{{ intakeCustomer.name }} · {{ intakeEligibility.allowed ? 'Eligible for a new order' : 'Order hold' }}</p>
+      <p v-if="!intakeEligibility.allowed" class="mt-1">Previous disputed invoices require resolution and settlement, or a seller override for the specific PO.</p>
+      <RouterLink :to="{ path: '/orders', query: { customer: intakeCustomer.id } }" class="mt-2 inline-block font-medium underline">Review purchase order eligibility</RouterLink>
+    </div>
     <p v-if="langNotice" role="status" class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{{ langNotice }}</p>
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-sm text-slate-600">Follow-up priority is rule-based and explainable — it is not a credit score and never bypasses reminder approval.</p>

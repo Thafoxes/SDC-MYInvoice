@@ -1,11 +1,13 @@
 import { ref } from 'vue';
 import * as actions from '@/lib/actions';
 import * as store from '@/lib/store';
+import * as customerOrders from '@/lib/customerOrders';
 import { runInvoiceCheck as localCheck } from '@/lib/reminderEngine';
 import { askAiAssistant as localAssistant } from '@/lib/aiService';
 import { refreshStore } from '@/composables/useDemoStore';
 
 export const telegramEnabled = import.meta.env.VITE_TELEGRAM_ENABLED === 'true';
+export const backendEnabled = import.meta.env.VITE_BACKEND_ENABLED === 'true' || telegramEnabled;
 export const connectionError = ref('');
 function checkAccess(response: Response) {
   if (response.status === 401) {
@@ -17,12 +19,12 @@ export const integration = ref({ model: 'gemma4:31b', botConfigured: false, poll
 let requestRevision = 0;
 
 export async function refreshServer() {
-  if (!telegramEnabled) return;
+  if (!backendEnabled) return;
   const revision = ++requestRevision;
   try {
     const response = await fetch('/api/state');
     checkAccess(response);
-    if (!response.ok) throw new Error('Local Telegram API unavailable. Start npm run server.');
+    if (!response.ok) throw new Error('Local API unavailable. Start npm run server.');
     const body = await response.json();
     if (revision !== requestRevision) return;
     store.replaceSnapshot(body.data); integration.value = body.integration; connectionError.value = ''; refreshStore();
@@ -31,7 +33,7 @@ export async function refreshServer() {
 
 function command<F extends (...args: any[]) => any>(name: string, local: F) {
   return async (...args: Parameters<F>): Promise<Awaited<ReturnType<F>>> => {
-    if (!telegramEnabled) return local(...args);
+    if (!backendEnabled) return local(...args);
     ++requestRevision;
     try {
       const response = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Nudgewise-Local': '1' }, body: JSON.stringify({ name, args }) });
@@ -56,6 +58,27 @@ export const reviewCustomerPromise = command('reviewCustomerPromise', actions.re
 export const simulateCustomerResponse = command('simulateCustomerResponse', actions.simulateCustomerResponse);
 export const recordPayment = command('recordPayment', actions.recordPayment);
 export const setCustomerLanguage = command('setCustomerLanguage', actions.setCustomerLanguage);
+export const createCustomer = command('createCustomer', customerOrders.createCustomer);
+export const createPurchaseOrder = command('createPurchaseOrder', customerOrders.createPurchaseOrder);
+export const approvePurchaseOrder = command('approvePurchaseOrder', customerOrders.approvePurchaseOrder);
+export async function extractCustomerDocument(file: File, actorRole = 'seller'): Promise<customerOrders.CustomerExtraction> {
+  if (!backendEnabled) throw new Error('Enable backend mode to read documents, or enter the customer manually.');
+  if (!file.size || file.size > 10 * 1024 * 1024) throw new Error('Choose a non-empty PDF, JPG or PNG up to 10 MB.');
+  const content = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(new Error('Could not read this file. Try again or enter details manually.'));
+    reader.onabort = () => reject(new Error('File reading was cancelled.'));
+    reader.readAsDataURL(file);
+  });
+  const response = await fetch('/api/customer-document', { method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Nudgewise-Local': '1' },
+    body: JSON.stringify({ name: file.name, content, actorRole }) });
+  checkAccess(response);
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || 'Document extraction failed. Enter details manually or try another file.');
+  return body.result;
+}
 export const runInvoiceCheck = command('runInvoiceCheck', localCheck);
 export const setDemoDate = command('setDemoDate', store.setDemoDate);
 export const resetStore = command('resetStore', store.resetStore);

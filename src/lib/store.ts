@@ -2,7 +2,7 @@
 import {
   Business, User, Customer, Invoice, Payment, Credit, FollowUpAction,
   CustomerResponse, ActivityEvent, Notification, AiConversation, DemoState,
-  InvoiceWithCustomer,
+  InvoiceWithCustomer, PurchaseOrder,
 } from '@/types';
 import { subtractMoney, sumMoney, daysOverdue, daysBetween } from './format';
 import { templateReminder } from './reminderTemplates';
@@ -17,9 +17,10 @@ export function configureStorage(adapter: Pick<Storage, 'getItem' | 'setItem'>):
 }
 
 // Server snapshots replace the browser cache; they are never written back as mutations.
-export function replaceSnapshot(data: StoreData): void { cache = data; }
+export function replaceSnapshot(data: StoreData): void { cache = migrate(data); }
 
 export interface StoreData {
+  purchaseOrders: PurchaseOrder[];
   receipts?: Receipt[];
   businesses: Business[];
   users: User[];
@@ -207,6 +208,7 @@ function getSeedData(): StoreData {
   for (const c of customers) c.preferred_language = languages[c.id] ?? 'en';
 
   return {
+    purchaseOrders: [],
     businesses, users, customers, invoices, payments, credits,
     followUpActions, customerResponses, activityEvents, notifications,
     aiConversations: [],
@@ -217,22 +219,34 @@ function getSeedData(): StoreData {
 // ---- Storage operations ----
 let cache: StoreData | null = null;
 
+function migrate(data: StoreData): StoreData {
+  data.purchaseOrders ??= [];
+  for (const invoice of data.invoices) {
+    const disputedBefore = data.activityEvents.some(e => e.business_id === invoice.business_id && e.invoice_id === invoice.id
+      && ['dispute_raised', 'dispute_resolved'].includes(e.event_type));
+    const disputedReply = data.customerResponses.some(r => r.business_id === invoice.business_id && r.invoice_id === invoice.id
+      && (r.ai_flags?.includes('dispute') || r.ai_category === 'invoice_dispute'));
+    if (invoice.dispute_active || disputedBefore || disputedReply) invoice.settlement_required = true;
+  }
+  return data;
+}
+
 function load(): StoreData {
   if (cache) return cache;
   if (storage) {
     const raw = storage.getItem(STORAGE_KEY);
-    cache = raw ? JSON.parse(raw) as StoreData : getSeedData();
+    cache = migrate(raw ? JSON.parse(raw) as StoreData : getSeedData());
     if (!raw) save(cache!);
     return cache!;
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      cache = JSON.parse(raw) as StoreData;
+      cache = migrate(JSON.parse(raw) as StoreData);
       return cache;
     }
   } catch { /* ignore */ }
-  cache = getSeedData();
+  cache = migrate(getSeedData());
   save(cache);
   return cache;
 }
@@ -249,13 +263,15 @@ export function update(mutator: (data: StoreData) => void): StoreData {
   const data = load();
   // Deep clone to trigger Vue store revisions on refresh
   const cloned: StoreData = JSON.parse(JSON.stringify(data));
+  migrate(cloned);
   mutator(cloned);
+  migrate(cloned);
   save(cloned);
   return cloned;
 }
 
 export function resetStore(): StoreData {
-  const fresh = getSeedData();
+  const fresh = migrate(getSeedData());
   save(fresh);
   return fresh;
 }
@@ -279,8 +295,8 @@ export const DEMO_BUSINESS_NAME = 'Kedai Maju Jaya';
 
 // ---- Computed invoice helpers ----
 export function computeInvoiceWithCustomer(inv: Invoice, data: StoreData, todayStr: string): InvoiceWithCustomer {
-  const payments = data.payments.filter((p) => p.invoice_id === inv.id && p.verification_status === 'recorded');
-  const credits = data.credits.filter((c) => c.invoice_id === inv.id);
+  const payments = data.payments.filter((p) => p.business_id === inv.business_id && p.invoice_id === inv.id && p.verification_status === 'recorded');
+  const credits = data.credits.filter((c) => c.business_id === inv.business_id && c.invoice_id === inv.id);
   const totalPaid = sumMoney(payments.map((p) => p.amount));
   const totalCredits = sumMoney(credits.map((c) => c.amount));
   const outstanding = Math.max(0, subtractMoney(subtractMoney(inv.invoice_amount, totalPaid), totalCredits));
@@ -288,7 +304,7 @@ export function computeInvoiceWithCustomer(inv: Invoice, data: StoreData, todayS
   return {
     ...inv,
     status: outstanding <= 0 ? 'paid' : dOverdue > 0 ? 'overdue' : 'pending',
-    customer: data.customers.find((c) => c.id === inv.customer_id),
+    customer: data.customers.find((c) => c.id === inv.customer_id && c.business_id === inv.business_id),
     outstanding_balance: outstanding,
     total_paid: totalPaid,
     total_credits: totalCredits,
@@ -298,8 +314,8 @@ export function computeInvoiceWithCustomer(inv: Invoice, data: StoreData, todayS
 }
 
 export function computeStatus(inv: Invoice, data: StoreData, todayStr: string): 'paid' | 'pending' | 'overdue' {
-  const payments = data.payments.filter((p) => p.invoice_id === inv.id && p.verification_status === 'recorded');
-  const credits = data.credits.filter((c) => c.invoice_id === inv.id);
+  const payments = data.payments.filter((p) => p.business_id === inv.business_id && p.invoice_id === inv.id && p.verification_status === 'recorded');
+  const credits = data.credits.filter((c) => c.business_id === inv.business_id && c.invoice_id === inv.id);
   const totalPaid = sumMoney(payments.map((p) => p.amount));
   const totalCredits = sumMoney(credits.map((c) => c.amount));
   const outstanding = Math.max(0, subtractMoney(subtractMoney(inv.invoice_amount, totalPaid), totalCredits));

@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
+const customerOrders = require('../.server-build/lib/customerOrders.js');
 const { DatabaseSync } = require('node:sqlite');
 const { createServer } = require('node:http');
 const store = require('../.server-build/lib/store.js');
@@ -184,6 +185,10 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
   }
 
   const commands = {
+    ...Object.fromEntries(['createCustomer', 'createPurchaseOrder', 'approvePurchaseOrder'].map(name => [name, (...args) => {
+      if (args[name === 'createPurchaseOrder' ? 4 : 3] !== businessId) return { success: false, error: 'Business does not match this workspace' };
+      return customerOrders[name](...args);
+    }])),
     ...Object.fromEntries(['approveFollowUp', 'rejectFollowUp', 'editFollowUpMessage', 'resolveVerificationHold', 'resolveDispute', 'confirmPromise', 'reviewCustomerPromise', 'simulateCustomerResponse', 'recordPayment', 'setCustomerLanguage'].map(key => [key, actions[key]])),
     runInvoiceCheck: reminders.runInvoiceCheck,
     setDemoDate(date) { if (api === integrations) throw new Error('Telegram mode uses the business current date. Disable Telegram mode to simulate dates.'); store.setDemoDate(date); },
@@ -249,6 +254,36 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
         if (!r?.extension) return json(404, { error: 'Attachment unavailable' });
         const bytes = fs.readFileSync(path.join(directory, `${r.id}.${r.extension}`));
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${r.id}.${r.extension}"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end(bytes);
+      }
+      if (req.method === 'POST' && req.url === '/api/customer-document') {
+        if (req.headers['x-nudgewise-local'] !== '1' || !req.headers['content-type']?.startsWith('application/json')) return json(403, { error: 'Local JSON upload required' });
+        const maxBytes = 10 * 1024 * 1024;
+        const maxBody = 4 * Math.ceil(maxBytes / 3) + 4096;
+        let raw = '', length = 0;
+        for await (const chunk of req) {
+          length += Buffer.byteLength(chunk); if (length > maxBody) return json(413, { error: 'Document exceeds 10 MB' });
+          raw += chunk;
+        }
+        const upload = JSON.parse(raw);
+        if (!upload || !['seller', 'staff'].includes(upload.actorRole)) return json(403, { error: 'Seller or staff role required' });
+        if (typeof upload.name !== 'string' || !upload.name.trim() || upload.name.length > 255 || typeof upload.content !== 'string'
+          || !upload.content || upload.content.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(upload.content))
+          return json(400, { error: 'Invalid document upload' });
+        const bytes = Buffer.from(upload.content, 'base64');
+        if (bytes.toString('base64') !== upload.content) return json(400, { error: 'Invalid document encoding' });
+        if (bytes.length > maxBytes) return json(413, { error: 'Document exceeds 10 MB' });
+        const extension = integrations.fileExtension(bytes);
+        const tempDirectory = fs.mkdtempSync(path.join(directory, 'customer-'));
+        const filename = path.join(tempDirectory, `document.${extension}`);
+        let result;
+        try {
+          fs.writeFileSync(filename, bytes, { mode: 0o600 });
+          result = integrations.validateCustomerExtraction(await api.extractCustomer(filename));
+        } finally {
+          fs.rmSync(filename, { force: true });
+          fs.rmdirSync(tempDirectory);
+        }
+        return json(200, { result });
       }
       if (req.method !== 'POST' || req.url !== '/api/command') return json(404, { error: 'Not found' });
       if (req.headers['x-nudgewise-local'] !== '1' || !req.headers['content-type']?.startsWith('application/json')) return json(403, { error: 'Local JSON command required' });
