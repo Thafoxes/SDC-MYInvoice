@@ -10,6 +10,8 @@ const { matchReceipt, validateExtraction, receiptProblem } = require('../.server
 const integrations = require('./integrations.cjs');
 const { validateReplyAnalysis, businessDate } = require('../.server-build/lib/replyAnalysis.js');
 const { notifyMissedPromises } = require('../.server-build/lib/attention.js');
+const { createAccessGuard } = require('./access.cjs');
+const { serveFrontend } = require('./frontend.cjs');
 
 function createBackend({ directory = path.resolve('.local-data'), api = integrations } = {}) {
   fs.mkdirSync(directory, { recursive: true });
@@ -227,11 +229,19 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
       } catch { pollingError = 'Telegram polling failed; check token/network'; await new Promise(resolve => setTimeout(resolve, 5000)); }
     }
   }
-  const origins = new Set([process.env.FRONTEND_ORIGIN || 'http://localhost:5173', 'http://127.0.0.1:5173']);
+  const origins = new Set(['http://localhost:5173', 'http://127.0.0.1:5173',
+    ...(process.env.FRONTEND_ORIGIN || '').split(',').map(value => value.trim()).filter(Boolean)]);
+  const accessGuard = createAccessGuard();
   const server = createServer(async (req, res) => {
     const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(body)); };
-    if (!/^((localhost|127\.0\.0\.1)(:\d+)?)$/.test(req.headers.host || '') || (req.headers.origin && !origins.has(req.headers.origin))) return json(403, { error: 'Local access only' });
     try {
+      const localHost = /^((localhost|127\.0\.0\.1)(:\d+)?)$/.test(req.headers.host || '');
+      if (!process.env.PORT && !localHost) return json(403, { error: 'Local access only' });
+      if (!/^\/api(?:\/|$)/.test(req.url || '')) return serveFrontend(req, res, json);
+      const sameOrigin = req.headers.origin === `https://${req.headers.host}`
+        || (localHost && req.headers.origin === `http://${req.headers.host}`);
+      if (req.headers.origin && !sameOrigin && !origins.has(req.headers.origin)) return json(403, { error: 'Origin not allowed' });
+      if (!await accessGuard(req, res, json)) return;
       if (req.method === 'GET' && req.url === '/api/state') return json(200, { data: snapshot(), integration: { model: process.env.OLLAMA_MODEL || 'gemma4:31b', botConfigured: !!process.env.TELEGRAM_BOT_TOKEN, pollingError, lastPollAt, receivingAccountName: process.env.RECEIPT_BENEFICIARY || '' } });
       const attachmentId = /^\/api\/receipts\/(tg-\d+)\/file$/.exec(req.url || '')?.[1];
       if (req.method === 'GET' && attachmentId) {
@@ -265,8 +275,13 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
 
 module.exports = { createBackend };
 if (require.main === module) {
+  if (process.env.PORT && !process.env.DEMO_ACCESS_KEY?.trim()) {
+    throw new Error('DEMO_ACCESS_KEY is required when PORT is set. Configure it in Replit Secrets before starting the public server.');
+  }
   const backend = createBackend();
-  backend.server.listen(Number(process.env.PORT || 8787), '127.0.0.1', () => console.log('Local Telegram demo API: http://127.0.0.1:8787'));
+  const port = Number(process.env.PORT || 8787);
+  const host = process.env.PORT ? '0.0.0.0' : '127.0.0.1';
+  backend.server.listen(port, host, () => console.log(`NudgeWise: http://${host}:${port}`));
   backend.poll().catch(error => console.error(error.message));
   setInterval(() => backend.monitor(), 30000).unref();
 }

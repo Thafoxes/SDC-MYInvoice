@@ -1,0 +1,12 @@
+.git/
+node_modules/
+.pythonlibs/
+.local-data/
+.server-build/
+.test-build/
+.cache/
+generated-artifacts/
+attached_assets/
+.env
+.env.*
+!.env.example

@@ -11,6 +11,8 @@ venv/
 htmlcov/
 *.egg-info/
 .venv-telegram/
+.pythonlibs/
+/generated-artifacts/
 
 # Environment
 .env

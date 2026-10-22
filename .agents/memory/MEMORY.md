@@ -1,0 +1,1 @@
+- [Imported runtime setup](hosting-scope.md) — the imported Vue runtime can shadow Node 24; package-install callbacks reject empty lists and pip -r tokens.

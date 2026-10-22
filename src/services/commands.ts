@@ -7,6 +7,12 @@ import { refreshStore } from '@/composables/useDemoStore';
 
 export const telegramEnabled = import.meta.env.VITE_TELEGRAM_ENABLED === 'true';
 export const connectionError = ref('');
+function checkAccess(response: Response) {
+  if (response.status === 401) {
+    window.dispatchEvent(new Event('nudgewise:access-required'));
+    throw new Error('Demo access required. Enter the passcode again.');
+  }
+}
 export const integration = ref({ model: 'gemma4:31b', botConfigured: false, pollingError: '', lastPollAt: null as string | null, receivingAccountName: '' });
 let requestRevision = 0;
 
@@ -15,6 +21,7 @@ export async function refreshServer() {
   const revision = ++requestRevision;
   try {
     const response = await fetch('/api/state');
+    checkAccess(response);
     if (!response.ok) throw new Error('Local Telegram API unavailable. Start npm run server.');
     const body = await response.json();
     if (revision !== requestRevision) return;
@@ -28,6 +35,7 @@ function command<F extends (...args: any[]) => any>(name: string, local: F) {
     ++requestRevision;
     try {
       const response = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Nudgewise-Local': '1' }, body: JSON.stringify({ name, args }) });
+      checkAccess(response);
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Operation failed');
       ++requestRevision;
