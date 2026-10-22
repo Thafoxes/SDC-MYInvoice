@@ -7,15 +7,14 @@
 
 ## Team Information
 
-| Field | Details |
-| --- | --- |
-| Team name | YOLO |
-| Hackathon domain | Domain 2 — Orbyte Smart SME Challenge |
-| SDG focus | SDG 8 — Decent Work and Economic Growth |
-| Team leader | WONG JIA SOON |
-| University | UNIVERSITI TEKNOLOGI MALAYSIA |
-| Team members | AHMAD FADRIL, DANIEL, YIBRIW, ZARFIRZAN
- |
+| Field                  | Details                                     |
+| ---------------------- | ------------------------------------------- |
+| **Team Name**          | YOLO                                        |
+| **Team Domain**        | Domain 2                                    |
+| **SDG Track (1–17)**   | SDG 8 — Decent Work and Economic Growth |
+| **Team Leader**        | WONG JIA SOON                               |
+| **University**         | UNIVERSITI TEKNOLOGI MALAYSIA                |
+| **Number of Members**  | 4                                      |
 
 ## Project Links
 
