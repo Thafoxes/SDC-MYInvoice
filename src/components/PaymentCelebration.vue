@@ -4,6 +4,7 @@ import { PartyPopper, X } from 'lucide-vue-next';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { computeInvoiceWithCustomer } from '@/lib/store';
 import { formatMYR } from '@/lib/format';
+import { telegramEnabled, integration } from '@/services/commands';
 
 /** Shows a short celebration when an open invoice becomes fully paid. */
 const props = defineProps<{ businessId: string }>();
@@ -26,10 +27,17 @@ let armTimer: ReturnType<typeof setTimeout> | undefined;
 let confettiTimer: ReturnType<typeof setTimeout> | undefined;
 const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
+function arm() {
+  clearTimeout(armTimer);
+  armTimer = setTimeout(() => { known = new Set(paid.value.map(i => i.id)); armed = true; }, 1500);
+}
 onMounted(() => {
   known = new Set(paid.value.map(i => i.id));
-  armTimer = setTimeout(() => { known = new Set(paid.value.map(i => i.id)); armed = true; }, 4000);
+  // With the backend, wait for the first server snapshot so invoices that were
+  // already paid when the page opened never trigger a celebration.
+  if (!telegramEnabled) arm();
 });
+const stopArmWatch = watch(integration, () => { if (telegramEnabled && !armed) { arm(); stopArmWatch(); } });
 onUnmounted(() => { clearTimeout(armTimer); clearTimeout(confettiTimer); });
 
 watch(paid, list => {

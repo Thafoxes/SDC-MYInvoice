@@ -3,7 +3,8 @@ import { computed, ref, watch } from 'vue';
 import { Sparkles, RefreshCw, FileText, Languages } from 'lucide-vue-next';
 import BaseModal from '@/components/BaseModal.vue';
 import TelegramPreview from '@/components/TelegramPreview.vue';
-import { TONES, LANGS, type Tone, type Lang, type ReminderFacts } from '@/presentation/toneStudio';
+import { TONES, LANGS, templateReminder, type Tone, type Lang, type ReminderFacts } from '@/presentation/toneStudio';
+import { telegramEnabled } from '@/services/commands';
 import { rewriteReminder, type RewriteResult } from '@/services/rewrite';
 
 const props = defineProps<{ open: boolean; followUpId: string | null; facts: ReminderFacts | null; currentMessage: string; defaultTone: Tone; savedLang: Lang }>();
@@ -17,10 +18,24 @@ const result = ref<RewriteResult | null>(null);
 const loading = ref(false);
 let requestId = 0;
 
-async function generate() {
+let debounce: ReturnType<typeof setTimeout> | undefined;
+
+/** Shows the built-in wording instantly, then asks Gemma once the seller stops clicking. */
+function generate(delay = 0) {
   if (!props.followUpId || !props.facts) return;
   const id = ++requestId;
+  result.value = {
+    text: templateReminder(props.facts, tone.value, lang.value),
+    source: 'template',
+    note: telegramEnabled ? 'Asking Gemma for a fresh version…' : undefined,
+  };
+  if (!telegramEnabled) { void finish(id); return; }
   loading.value = true;
+  clearTimeout(debounce);
+  debounce = setTimeout(() => void finish(id), delay);
+}
+async function finish(id: number) {
+  if (!props.followUpId || !props.facts) return;
   const r = await rewriteReminder(props.followUpId, props.facts, tone.value, lang.value);
   if (id !== requestId) return; // a newer choice replaced this one
   result.value = r;
@@ -33,10 +48,10 @@ watch(() => props.open, open => {
     lang.value = props.savedLang;
     remember.value = true;
     result.value = null;
-    void generate();
+    generate();
   }
 });
-watch([toneIndex, lang], () => { if (props.open) void generate(); });
+watch([toneIndex, lang], () => { if (props.open) generate(600); });
 
 const preview = computed(() => result.value?.text ?? props.currentMessage);
 </script>
@@ -110,7 +125,7 @@ const preview = computed(() => result.value?.text ?? props.currentMessage);
             {{ result.source === 'ai' ? 'Written by Gemma 4 · checked against invoice' : 'Built-in template' }}
           </span>
           <span v-else class="text-[13px] text-orbyte-muted">Preparing…</span>
-          <button type="button" class="outline-btn !py-1.5 !text-sm" :disabled="loading" @click="generate">
+          <button type="button" class="outline-btn !py-1.5 !text-sm" :disabled="loading" @click="generate()">
             <RefreshCw class="h-4 w-4" :class="loading ? 'animate-spin' : ''" /> {{ loading ? 'Writing…' : 'Regenerate' }}
           </button>
         </div>
@@ -126,7 +141,7 @@ const preview = computed(() => result.value?.text ?? props.currentMessage);
         <p class="text-[13px] text-orbyte-muted">Using this message resets approval — you still approve before it is sent.</p>
         <div class="flex justify-end gap-2">
           <button class="outline-btn" @click="emit('close')">Cancel</button>
-          <button class="primary-btn" :disabled="loading || !result" @click="result && emit('apply', result.text, lang !== savedLang && remember ? lang : null)">Use this message</button>
+          <button class="primary-btn" :disabled="!result" @click="result && emit('apply', result.text, lang !== savedLang && remember ? lang : null)">Use this message</button>
         </div>
       </div>
     </template>
