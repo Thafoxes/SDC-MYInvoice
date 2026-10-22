@@ -10,6 +10,7 @@ venv/
 .coverage
 htmlcov/
 *.egg-info/
+.venv-telegram/
 
 # Environment
 .env
@@ -47,3 +48,23 @@ pnpm-debug.log*
 /.test-build
 /.env_folder
 /.codex
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.test-build/
+.server-build/
+.local-data/
+coverage/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# System files
+.DS_Store
