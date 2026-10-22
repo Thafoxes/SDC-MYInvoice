@@ -5,6 +5,7 @@ import {
   InvoiceWithCustomer,
 } from '@/types';
 import { subtractMoney, sumMoney, daysOverdue, daysBetween } from './format';
+import { templateReminder } from './reminderTemplates';
 import type { Receipt } from './receipts';
 
 const STORAGE_KEY = 'nudgewise-demo-v1.1'; // new seed with v1.1 historical invoice test cases
@@ -167,7 +168,7 @@ function getSeedData(): StoreData {
     {
       id: 'fu-001', business_id: businessId, invoice_id: 'inv-1006', customer_id: 'cust-06',
       checkpoint: 2, reason: 'Invoice is 1 day overdue. First overdue reminder.',
-      message: 'Dear Chong Kah Mun, this is a friendly reminder that invoice INV-1006 for RM1,800.00 is now 1 day overdue. Kindly arrange payment at your earliest convenience. Thank you. — Kedai Maju Jaya',
+      message: templateReminder({ customerName: 'Chong Kah Mun', invoiceNumber: 'INV-1006', amount: 1800, dueDate: '2026-10-19', daysOverdue: 1, businessName: 'Kedai Maju Jaya' }, 'neutral', 'ms'),
       message_version: 1, approval_state: 'pending', approved_by: null, approved_at: null,
       approved_message_hash: null, send_state: 'not_sent', sent_at: null,
       delivery_status: null, recipient: '0162345678',
@@ -197,6 +198,13 @@ function getSeedData(): StoreData {
     { id: 'nt-003', business_id: businessId, title: 'Invoice dispute', body: 'ABC Trading disputes INV-1013 — reminders paused', kind: 'exception', link: 'action-center', read: false, created_at: '2026-10-16T00:00:00Z' },
     { id: 'nt-004', business_id: businessId, title: 'Missed payment promise', body: 'Chong Kah Mun missed promise date 15 Oct for INV-1016', kind: 'exception', link: 'action-center', read: false, created_at: '2026-10-16T00:00:00Z' },
   ];
+
+  // Synthetic reminder-language preferences (English when not listed).
+  const languages: Record<string, 'en' | 'ms' | 'zh'> = {
+    'cust-01': 'ms', 'cust-05': 'ms', 'cust-06': 'ms', 'cust-07': 'ms', 'cust-09': 'ms', 'cust-11': 'ms',
+    'cust-08': 'zh', 'cust-12': 'zh', 'cust-green': 'zh', 'cust-yellow': 'ms', 'cust-grey': 'ms',
+  };
+  for (const c of customers) c.preferred_language = languages[c.id] ?? 'en';
 
   return {
     businesses, users, customers, invoices, payments, credits,

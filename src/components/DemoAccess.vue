@@ -13,6 +13,13 @@ async function checkAccess() {
   state.value = 'loading';
   message.value = '';
 
+  // Frontend-only local development has no backend to ask; there is nothing to protect.
+  if (import.meta.env.DEV && import.meta.env.VITE_TELEGRAM_ENABLED !== 'true') {
+    authenticated.value = true;
+    state.value = 'ready';
+    return;
+  }
+
   try {
     const response = await fetch('/api/access', {
       method: 'GET',

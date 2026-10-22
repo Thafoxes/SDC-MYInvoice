@@ -4,6 +4,7 @@ import { RouterView } from 'vue-router';
 import AppSidebar from '@/components/AppSidebar.vue';
 import AppHeader from '@/components/AppHeader.vue';
 import DemoControls from '@/components/DemoControls.vue';
+import PaymentCelebration from '@/components/PaymentCelebration.vue';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { DEMO_BUSINESS_ID, DEMO_SELLER_ID } from '@/lib/store';
 import { telegramEnabled, connectionError, refreshServer } from '@/services/commands';
@@ -26,6 +27,7 @@ onUnmounted(()=>window.removeEventListener('storage',onStorage));
       <AppHeader :notifications="notifications" :simulated-date="data.demoState.simulated_date" :seller-name="seller.name" :seller-role="seller.role" :avatar-color="seller.avatar_color" />
       <main id="main-content" ref="mainContent" tabindex="-1" class="mx-auto max-w-[1600px] px-4 py-6 pb-24 lg:px-8"><p v-if="connectionError" role="alert" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{{connectionError}}</p><RouterView /></main>
       <DemoControls :seller-name="seller.name" />
+      <PaymentCelebration :business-id="DEMO_BUSINESS_ID" />
     </div>
   </div>
 </template>
