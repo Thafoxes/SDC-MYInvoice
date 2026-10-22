@@ -12,8 +12,10 @@ import { formatMYR, formatDate, sumMoney } from '@/lib/format';
 import { getDerivedLabelChips, formatShortPriorityReason, plural } from '@/presentation/display';
 import type { InvoiceWithCustomer } from '@/types';
 import { useRoute } from 'vue-router';
+import { LANGS, customerLang, type Lang } from '@/lib/reminderTemplates';
+import { setCustomerLanguage } from '@/services/commands';
 
-const { data } = useDemoStore();
+const { data, refreshStore } = useDemoStore();
 const currentUser = computed(() => data.value.users.find(u => u.id === DEMO_SELLER_ID)!);
 const currentBusiness = computed(() => data.value.businesses.find(b => b.id === DEMO_BUSINESS_ID));
 const route = useRoute();
@@ -66,6 +68,22 @@ const expandedPriority = ref<string | null>(null);
 function priorityInvoiceRefs(priority: CustomerPriority) {
   return priority.supportingInvoiceIds.map(id => invoices.value.find(i => i.id === id)?.invoice_number ?? id).join(', ') || 'None';
 }
+function langOf(customerId: string): Lang {
+  return customerLang(data.value.customers.find(c => c.id === customerId));
+}
+const langNotice = ref('');
+let langTimer: ReturnType<typeof setTimeout> | undefined;
+async function changeLang(customerId: string, name: string, event: Event) {
+  const lang = (event.target as HTMLSelectElement).value;
+  const r = await setCustomerLanguage(customerId, lang, currentUser.value.name, currentUser.value.role, DEMO_BUSINESS_ID);
+  const label = LANGS.find(l => l.id === lang)?.label ?? lang;
+  langNotice.value = r.success
+    ? `${name}: reminders will be written in ${label}${r.redrafted ? ` (${r.redrafted} draft${r.redrafted === 1 ? '' : 's'} rewritten)` : ''}.`
+    : r.error || 'Could not save language';
+  clearTimeout(langTimer);
+  langTimer = setTimeout(() => (langNotice.value = ''), 4000);
+  refreshStore();
+}
 function outstandingFor(customerId: string) {
   return sumMoney(invoices.value.filter(i => i.customer_id === customerId).map(i => i.outstanding_balance));
 }
@@ -73,6 +91,7 @@ function outstandingFor(customerId: string) {
 
 <template>
   <div class="space-y-5">
+    <p v-if="langNotice" role="status" class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{{ langNotice }}</p>
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-sm text-slate-600">Follow-up priority is rule-based and explainable — it is not a credit score and never bypasses reminder approval.</p>
     </div>
@@ -109,6 +128,12 @@ function outstandingFor(customerId: string) {
             <span class="shrink-0 rounded px-2 py-0.5 text-[12px] font-medium" :class="priorityBadgeClass(p.level)">{{ p.label }}</span>
           </div>
           <p class="mt-1 text-[13px] text-slate-600">{{ formatShortPriorityReason(p, invoices) }}</p>
+          <label class="mt-2 flex items-center gap-2 text-[13px] text-slate-500">
+            Reminder language
+            <select class="form-input !mt-0 !w-auto !py-1 text-[13px]" :value="langOf(p.customerId)" @change="changeLang(p.customerId, p.customerName, $event)">
+              <option v-for="l in LANGS" :key="l.id" :value="l.id">{{ l.label }}</option>
+            </select>
+          </label>
           <button
             class="mt-1.5 text-[13px] font-medium text-blue-700"
             :aria-expanded="expandedPriority === p.customerId"
@@ -132,6 +157,7 @@ function outstandingFor(customerId: string) {
               <th class="px-4 py-2.5">Customer</th>
               <th class="px-4 py-2.5">Priority</th>
               <th class="px-4 py-2.5">Reason</th>
+              <th class="px-4 py-2.5">Reminder language</th>
               <th class="px-4 py-2.5 text-right">Details</th>
             </tr>
           </thead>
@@ -147,6 +173,16 @@ function outstandingFor(customerId: string) {
                 <td class="px-4 py-2 text-slate-600 max-w-sm truncate">
                   {{ formatShortPriorityReason(p, invoices) }}
                 </td>
+                <td class="px-4 py-2">
+                  <select
+                    class="form-input !mt-0 !w-auto !py-1 text-[13px]"
+                    :value="langOf(p.customerId)"
+                    :aria-label="`Reminder language for ${p.customerName}`"
+                    @change="changeLang(p.customerId, p.customerName, $event)"
+                  >
+                    <option v-for="l in LANGS" :key="l.id" :value="l.id">{{ l.label }}</option>
+                  </select>
+                </td>
                 <td class="px-4 py-2 text-right">
                   <button
                     class="text-slate-500 hover:text-slate-900 text-[13px] font-medium"
@@ -157,7 +193,7 @@ function outstandingFor(customerId: string) {
                 </td>
               </tr>
               <tr v-if="expandedPriority === p.customerId" class="bg-slate-50/80">
-                <td colspan="4" class="px-4 py-3 text-[13px] text-slate-600 space-y-1.5">
+                <td colspan="5" class="px-4 py-3 text-[13px] text-slate-600 space-y-1.5">
                   <p><strong>Supporting invoices:</strong> {{ priorityInvoiceRefs(p) }}</p>
                   <p><strong>Last 5 settled:</strong> {{ p.settledCount }} · <strong>Late:</strong> {{ p.lateCount }}</p>
                   <p v-for="x in p.lastFiveSettled" :key="x.invoiceId" class="text-slate-500">
@@ -169,7 +205,7 @@ function outstandingFor(customerId: string) {
               </tr>
             </template>
             <tr v-if="!visiblePriorities.length">
-              <td colspan="4" class="p-4 text-center text-slate-400">
+              <td colspan="5" class="p-4 text-center text-slate-400">
                 No customer priorities in this view.
               </td>
             </tr>

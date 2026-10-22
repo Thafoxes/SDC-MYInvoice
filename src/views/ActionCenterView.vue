@@ -5,10 +5,12 @@ import TelegramPreview from '@/components/TelegramPreview.vue';
 import AttentionQueue from '@/components/AttentionQueue.vue';
 import CustomerReplyCard from '@/components/CustomerReplyCard.vue';
 import { getAttention, type AttentionItem } from '@/lib/attention';
-import { Eye, Check, Pencil, X, Send } from 'lucide-vue-next';
+import { Eye, Check, Pencil, X, Send, Languages } from 'lucide-vue-next';
+import ToneStudio from '@/components/ToneStudio.vue';
+import { stageTone, customerLang, LANG_SHORT, TONES, type ReminderFacts, type Lang } from '@/presentation/toneStudio';
 import { useDemoStore } from '@/composables/useDemoStore';
-import { DEMO_BUSINESS_ID, DEMO_SELLER_ID, computeInvoiceWithCustomer } from '@/lib/store';
-import { approveFollowUp, rejectFollowUp, editFollowUpMessage, sendApprovedFollowUp } from '@/services/commands';
+import { DEMO_BUSINESS_ID, DEMO_SELLER_ID, DEMO_BUSINESS_NAME, computeInvoiceWithCustomer } from '@/lib/store';
+import { approveFollowUp, rejectFollowUp, editFollowUpMessage, sendApprovedFollowUp, setCustomerLanguage } from '@/services/commands';
 import { formatMYR, formatDate, formatDateTime } from '@/lib/format';
 import type { FollowUpAction, InvoiceWithCustomer } from '@/types';
 import { telegramEnabled } from '@/services/commands';
@@ -42,6 +44,11 @@ async function reviewAttention(item:AttentionItem){
 }
 let toastTimer:ReturnType<typeof setTimeout>|undefined;
 function notice(msg:string){toast.value=msg;if(toastTimer)clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.value='',3900);}
+const studioId=ref<string|null>(null);
+const studioFollowUp=computed(()=>followUps.value.find(f=>f.id===studioId.value)??null);
+const studioFacts=computed<ReminderFacts|null>(()=>{const f=studioFollowUp.value;if(!f?.invoice)return null;return{customerName:f.customer?.name??'Customer',invoiceNumber:f.invoice.invoice_number,amount:f.invoice.outstanding_balance,dueDate:f.invoice.due_date,daysOverdue:f.invoice.days_overdue,businessName:data.value.businesses.find(b=>b.id===DEMO_BUSINESS_ID)?.name??DEMO_BUSINESS_NAME};});
+function toneChip(f:FollowUpAction&{customer?:{preferred_language?:string|null}}){const t=stageTone(f.checkpoint);return `${LANG_SHORT[customerLang(f.customer)]} · ${TONES.find(x=>x.id===t)?.label}`;}
+async function applyStudio(text:string,rememberLang:Lang|null){if(!studioId.value)return;const fu=studioFollowUp.value;if(rememberLang&&fu)await setCustomerLanguage(fu.customer_id,rememberLang,seller.value.name,seller.value.role);const r=await editFollowUpMessage(studioId.value,text,seller.value.name,seller.value.role);notice(r.success?'New message saved — approve it when ready.':r.error||'Could not save message');if(r.success)studioId.value=null;refreshStore();}
 async function execute(fn:()=>Promise<{success:boolean;error?:string}>,ok:string){const r=await fn();notice(r.success?ok:r.error||'Action failed');refreshStore();}
 function beginEdit(f:FollowUpAction){editId.value=f.id;editText.value=f.message;editError.value='';}
 async function saveEdit(){if(!editId.value)return;if(!editText.value.trim()){editError.value='Message is required';return;}const result=await editFollowUpMessage(editId.value,editText.value,seller.value.name,seller.value.role);if(result.success){editId.value=null;notice('Reminder saved; approval reset.');}else editError.value=result.error||'Could not edit';refreshStore();}
@@ -69,8 +76,8 @@ watch([()=>route.fullPath,data],async()=>{
  <section v-if="tab==='all'||tab==='approval'" class="space-y-3"><h3 class="text-sm font-semibold">Reminder Approvals</h3><p v-if="!followUps.length" class="card p-6 text-sm text-orbyte-muted">No reminders yet. Use Demo Controls → Run Invoice Check to create drafts.</p>
    <div v-for="f in followUps" :key="f.id" class="card p-5"><div class="flex flex-col gap-4 lg:flex-row lg:justify-between"><div class="space-y-2 flex-1"><div class="flex flex-wrap items-center gap-2"><h4 class="font-semibold">{{f.customer?.name||'—'}}</h4><span class="text-sm text-orbyte-muted">{{f.invoice?.invoice_number}}</span><StatusBadge v-if="f.invoice" :status="f.invoice.status"/></div>
      <div class="flex flex-wrap gap-4 text-xs text-orbyte-muted"><span>Outstanding: <b class="text-orbyte-ink">{{formatMYR(f.invoice?.outstanding_balance||0)}}</b></span><span>Due: {{formatDate(f.invoice?.due_date||'')}}</span><span>Checkpoint: {{f.checkpoint}}</span><span v-if="f.invoice?.days_overdue" class="text-red-600">{{f.invoice.days_overdue}} days overdue</span></div>
-     <p class="text-xs text-orbyte-muted">{{f.reason}}</p><TelegramPreview :message="f.message" :recipient-name="f.customer?.name" :sender-name="seller.name" /><div class="flex gap-2 items-center text-xs"><span class="rounded-md bg-amber-50 px-2 py-1 capitalize text-amber-700">{{f.approval_state}}</span><span class="rounded-md bg-slate-50 px-2 py-1 capitalize text-slate-600">{{f.send_state}}</span><span v-if="f.delivery_status" class="text-orbyte-muted">{{f.delivery_status}}</span></div></div>
-     <div class="flex flex-wrap gap-2 lg:flex-col lg:min-w-[155px]"><template v-if="f.approval_state==='pending'"><button class="success-btn" @click="execute(()=>approveFollowUp(f.id,seller.id,seller.name,seller.role),'Reminder approved')"><Check class="w-4 h-4"/>Approve</button><button class="outline-btn" @click="beginEdit(f)"><Pencil class="w-4 h-4"/>Edit</button><button class="danger-btn" @click="execute(()=>rejectFollowUp(f.id,seller.name,seller.role),'Reminder rejected')"><X class="w-4 h-4"/>Reject</button></template>
+     <p class="text-xs text-orbyte-muted">{{f.reason}} <span class="ml-1 inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-[12px] font-medium text-purple-700" title="Language from the customer's preference; tone set by how late the invoice is">{{toneChip(f)}} · auto</span></p><TelegramPreview :message="f.message" :recipient-name="f.customer?.name" :sender-name="seller.name" /><div class="flex gap-2 items-center text-xs"><span class="rounded-md bg-amber-50 px-2 py-1 capitalize text-amber-700">{{f.approval_state}}</span><span class="rounded-md bg-slate-50 px-2 py-1 capitalize text-slate-600">{{f.send_state}}</span><span v-if="f.delivery_status" class="text-orbyte-muted">{{f.delivery_status}}</span></div></div>
+     <div class="flex flex-wrap gap-2 lg:flex-col lg:min-w-[155px]"><template v-if="f.approval_state==='pending'"><button class="success-btn" @click="execute(()=>approveFollowUp(f.id,seller.id,seller.name,seller.role),'Reminder approved')"><Check class="w-4 h-4"/>Approve</button><button class="outline-btn" @click="studioId=f.id"><Languages class="w-4 h-4"/>Tone &amp; language</button><button class="outline-btn" @click="beginEdit(f)"><Pencil class="w-4 h-4"/>Edit</button><button class="danger-btn" @click="execute(()=>rejectFollowUp(f.id,seller.name,seller.role),'Reminder rejected')"><X class="w-4 h-4"/>Reject</button></template>
        <button v-if="f.approval_state==='approved'&&f.send_state==='not_sent'" class="primary-btn" @click="execute(()=>sendApprovedFollowUp(f.id,seller.name),telegramEnabled?'Invoice message delivered to Telegram':'Message sent (simulated only)')"><Send class="w-4 h-4"/>{{telegramEnabled?'Send to Telegram':'Send (Simulation)'}}</button>
        <button v-if="f.invoice" class="outline-btn" @click="openInvoice(f.invoice)"><Eye class="w-4 h-4"/>View Invoice</button></div></div></div>
  </section>
@@ -81,5 +88,6 @@ watch([()=>route.fullPath,data],async()=>{
  <section v-if="tab==='history'" class="card p-5"><h3 class="font-semibold mb-4">Activity History</h3><p v-if="!activity.length" class="empty-text">No activity yet.</p><div v-for="(e,k) in activity" :key="e.id" class="border-l-2 pl-4 py-2" :class="k===0?'border-orbyte-blue':'border-orbyte-border'"><p class="text-sm">{{e.description}}</p><p class="text-xs text-orbyte-muted mt-1">{{formatDateTime(e.created_at)}} · {{e.actor}} ({{e.actor_role}})</p></div></section>
  <InvoiceDetailDrawer :invoice="selected" :open="drawerOpen" :seller-name="seller.name" :seller-role="seller.role" @close="drawerOpen=false"/>
  <BaseModal :open="!!editId" title="Edit Reminder Message" @close="editId=null"><p class="text-sm text-orbyte-muted mb-3">Changing the reminder invalidates previous approval. Seller approval is required again.</p><p v-if="editError" class="text-sm text-red-600 mb-2">{{editError}}</p><textarea v-model="editText" rows="6" class="form-input"></textarea><template #footer><div class="flex justify-end gap-2"><button class="outline-btn" @click="editId=null">Cancel</button><button class="primary-btn" @click="saveEdit">Save & Reset Approval</button></div></template></BaseModal>
+ <ToneStudio :open="!!studioId" :follow-up-id="studioId" :facts="studioFacts" :current-message="studioFollowUp?.message ?? ''" :default-tone="stageTone(studioFollowUp?.checkpoint ?? 2)" :saved-lang="customerLang(studioFollowUp?.customer)" @close="studioId=null" @apply="applyStudio" />
 </div>
 </template>

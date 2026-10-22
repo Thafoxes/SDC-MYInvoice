@@ -55,6 +55,7 @@ export const confirmPromise = command('confirmPromise', actions.confirmPromise);
 export const reviewCustomerPromise = command('reviewCustomerPromise', actions.reviewCustomerPromise);
 export const simulateCustomerResponse = command('simulateCustomerResponse', actions.simulateCustomerResponse);
 export const recordPayment = command('recordPayment', actions.recordPayment);
+export const setCustomerLanguage = command('setCustomerLanguage', actions.setCustomerLanguage);
 export const runInvoiceCheck = command('runInvoiceCheck', localCheck);
 export const setDemoDate = command('setDemoDate', store.setDemoDate);
 export const resetStore = command('resetStore', store.resetStore);

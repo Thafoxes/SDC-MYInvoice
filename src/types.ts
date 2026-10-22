@@ -29,6 +29,8 @@ export interface Customer {
   phone: string | null;
   telegram_chat_id: string | null;
   email: string | null;
+  /** Language for reminders: 'en' | 'ms' | 'zh'. Missing means English. */
+  preferred_language?: 'en' | 'ms' | 'zh' | null;
 }
 
 export interface Invoice {
