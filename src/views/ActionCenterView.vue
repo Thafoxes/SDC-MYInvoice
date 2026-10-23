@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import { blockedOrders } from '@/lib/orderWorkflow';
+import { AlertTriangle } from 'lucide-vue-next';
 import TelegramPreview from '@/components/TelegramPreview.vue';
 import AttentionQueue from '@/components/AttentionQueue.vue';
 import CustomerReplyCard from '@/components/CustomerReplyCard.vue';
@@ -27,11 +29,13 @@ const followUps=computed(()=>data.value.followUpActions.filter(f=>f.business_id=
 const responses=computed(()=>data.value.customerResponses.filter(r=>r.business_id===DEMO_BUSINESS_ID).map(r=>({...r,invoice:invMap.value.get(r.invoice_id || ''),customer:custMap.value.get(r.customer_id || '')})).sort((a,b)=>b.created_at.localeCompare(a.created_at)));
 const exceptions=computed(()=>getAttention(data.value,DEMO_BUSINESS_ID,data.value.demoState.simulated_date));
 const activity=computed(()=>data.value.activityEvents.filter(a=>a.business_id===DEMO_BUSINESS_ID).slice(0,50));
-const tab=ref<'all'|'approval'|'responses'|'exceptions'|'history'>('approval');
+const blocked=computed(()=>{void data.value;return blockedOrders(DEMO_BUSINESS_ID);});
+const router=useRouter();
+const tab=ref<'all'|'approval'|'responses'|'exceptions'|'blocked'|'history'>('approval');
 const tabs=computed(()=>[
  {id:'all',label:'All',count:0},{id:'approval',label:'Awaiting Approval',count:followUps.value.filter(f=>f.approval_state==='pending').length},
  {id:'responses',label:'Customer Responses',count:responses.value.filter(r=>r.review_status==='pending').length},
- {id:'exceptions',label:'Needs attention',count:exceptions.value.length},{id:'history',label:'History',count:0},
+ {id:'exceptions',label:'Needs attention',count:exceptions.value.length},{id:'blocked',label:'Blocked orders',count:blocked.value.length},{id:'history',label:'History',count:0},
 ] as const);
 const selectedId=ref<string|null>(null),drawerOpen=ref(false),editId=ref<string|null>(null),editText=ref(''),editError=ref(''),toast=ref('');
 const selected=computed(()=>invoices.value.find(i=>i.id===selectedId.value)??null);
@@ -61,7 +65,7 @@ watch([()=>route.fullPath,data],async()=>{
  const receipt=typeof route.query.receipt==='string'?route.query.receipt:'';
  if(reply)tab.value='responses';
  else if(receipt)tab.value='exceptions';
- else if(route.query.tab==='exceptions'||route.query.tab==='approval')tab.value=route.query.tab;
+ else if(route.query.tab==='exceptions'||route.query.tab==='approval'||route.query.tab==='blocked')tab.value=route.query.tab;
  await nextTick();
  if(reply||receipt){const element=document.getElementById(reply?`response-${reply}`:`receipt-${receipt}`);if(!element)return;element.focus({preventScroll:true});element.scrollIntoView({block:'start'});}
  if(typeof route.query.invoice==='string'){const invoice=invoices.value.find(i=>i.id===route.query.invoice);if(!invoice)return;openInvoice(invoice);}
@@ -85,6 +89,16 @@ watch([()=>route.fullPath,data],async()=>{
   <CustomerReplyCard v-for="r in responses" :key="r.id" :response="r" :invoice="r.invoice" :customer-name="r.customer?.name" :seller-name="seller.name" @review-invoice="openInvoice"/>
  </section>
  <AttentionQueue v-if="tab==='all'||tab==='exceptions'" @review="reviewAttention"/>
+ <section v-if="tab==='all'||tab==='blocked'" class="space-y-3" aria-label="Blocked orders"><h3 class="text-sm font-semibold">Blocked orders</h3>
+  <p class="text-xs text-orbyte-muted">These orders cannot be invoiced or followed up until someone acts. Reminders stay paused.</p>
+  <p v-if="!blocked.length" class="card p-6 text-sm text-orbyte-muted">No blocked orders. Every order can move to its next step.</p>
+  <article v-for="b in blocked" :key="b.order.id" class="card flex flex-col gap-3 border-l-4 border-l-rose-500 p-4 sm:flex-row sm:items-center sm:justify-between">
+   <div class="min-w-0 space-y-1.5"><p class="text-sm font-semibold">{{custMap.get(b.order.customer_id)?.name||'Customer'}} · {{b.order.reference}}</p>
+    <div v-for="(x,i) in b.blockers" :key="i" class="text-sm"><p class="flex items-start gap-1.5 text-rose-800"><AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" />{{x.reason}}</p>
+     <p class="pl-5 text-xs text-orbyte-muted"><span class="font-medium text-slate-700">Owner: {{x.owner}}</span> · Next: {{x.action}}</p></div></div>
+   <button type="button" class="primary-btn shrink-0 self-start sm:self-center" @click="router.push(`/orders/${encodeURIComponent(b.order.id)}/view`)">Open order</button>
+  </article>
+ </section>
  <section v-if="tab==='history'" class="card p-5"><h3 class="font-semibold mb-4">Activity History</h3><p v-if="!activity.length" class="empty-text">No activity yet.</p><div v-for="(e,k) in activity" :key="e.id" class="border-l-2 pl-4 py-2" :class="k===0?'border-orbyte-blue':'border-orbyte-border'"><p class="text-sm">{{e.description}}</p><p class="text-xs text-orbyte-muted mt-1">{{formatDateTime(e.created_at)}} · {{e.actor}} ({{e.actor_role}})</p></div></section>
  <InvoiceDetailDrawer :invoice="selected" :open="drawerOpen" :seller-name="seller.name" :seller-role="seller.role" @close="drawerOpen=false"/>
  <BaseModal :open="!!editId" title="Edit Reminder Message" @close="editId=null"><p class="text-sm text-orbyte-muted mb-3">Changing the reminder invalidates previous approval. Seller approval is required again.</p><p v-if="editError" class="text-sm text-red-600 mb-2">{{editError}}</p><textarea v-model="editText" rows="6" class="form-input"></textarea><template #footer><div class="flex justify-end gap-2"><button class="outline-btn" @click="editId=null">Cancel</button><button class="primary-btn" @click="saveEdit">Save & Reset Approval</button></div></template></BaseModal>

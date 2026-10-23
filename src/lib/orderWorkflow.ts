@@ -14,7 +14,12 @@ export interface OrderEvidence { id: string; business_id: string; purchase_order
  kind: 'chat_screenshot'|'existing_po'|'buyer_approval'|'delivery_proof'|'promise_proof'|'payment_proof'|'other';
  saved_at: string; extracted_text?: string; }
 export interface DeliveryConfirmation { id: string; business_id: string; purchase_order_id: string; item_name: string;
- accepted_quantity: number; reviewer_note: string; evidence_id: string | null; confirmed_at: string; }
+ accepted_quantity: number; reviewer_note: string; evidence_id: string | null; confirmed_at: string;
+ /** Seller decided the shortfall needs no adjustment; the reason is kept. */
+ shortfall_note?: string; shortfall_accepted_at?: string | null; }
+/** A credit note lowers what the buyer owes. It never edits the original invoice and is not a payment. */
+export interface CreditNote { id: string; business_id: string; purchase_order_id: string; invoice_id: string | null; credit_id: string | null;
+ number: string; item_name: string; quantity: number; amount: number; reason: string; created_at: string; created_by: string; }
 export interface PaymentClaim { id: string; business_id: string; purchase_order_id: string; invoice_id: string;
  amount: number; reference: string; evidence_id: string | null; status: 'pending'|'verified'|'rejected';
  created_at: string; reviewed_at: string | null; reviewed_by: string | null; }
@@ -23,9 +28,13 @@ export interface SettlementReceipt { id: string; business_id: string; purchase_o
 export interface OrderCase { id: string; business_id: string; purchase_order_id: string; kind: 'dispute'|'missing_document'|'other';
  reason: string; status: 'open'|'resolved'; opened_at: string; resolved_at: string | null; resolution_note: string; }
 export type WorkflowData = { quotations: Quotation[]; orderEvidence: OrderEvidence[]; deliveryConfirmations: DeliveryConfirmation[];
- paymentClaims: PaymentClaim[]; settlementReceipts: SettlementReceipt[]; orderCases: OrderCase[] };
+ paymentClaims: PaymentClaim[]; settlementReceipts: SettlementReceipt[]; orderCases: OrderCase[]; creditNotes: CreditNote[] };
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
+const round2 = (n: number) => Math.round(n * 100) / 100;
+function creditedQuantity(poId: string, itemName: string): number {
+ return (getStore().creditNotes ?? []).filter(n => n.purchase_order_id === poId && n.item_name === itemName).reduce((sum, n) => sum + n.quantity, 0);
+}
 function validText(value: unknown, max = 500): value is string { return typeof value === 'string' && value.length <= max && !/[\x00-\x08\x0b-\x1f\x7f]/.test(value); }
 function seller(actor: string, role: string, businessId: string) {
  const user = getStore().users.find(u => u.name === actor && u.role === role && u.business_id === businessId);
@@ -104,8 +113,9 @@ export function confirmDelivery(poId: string, itemName: string, accepted: number
  if ((po.details?.items.filter(i=>i.name===itemName).length||0)>1) throw Error('Repeated item names require individual line identification; review manually');
  if (!line || !Number.isFinite(accepted) || accepted<0 || accepted>line.quantity! || !validText(note,500) || !note.trim()) throw Error('Check accepted delivery quantity and seller note');
  if(evidenceId && !getStore().orderEvidence.some(e=>e.id===evidenceId && e.purchase_order_id===poId)) throw Error('Delivery evidence not linked');
+ if(accepted+creditedQuantity(poId,itemName)>line.quantity!) throw Error('Accepted plus credited quantity cannot exceed the ordered quantity');
  update(d=>{const old=d.deliveryConfirmations.find(x=>x.purchase_order_id===poId && x.item_name===itemName);
-   const entry:DeliveryConfirmation={id:old?.id||id(),business_id:businessId,purchase_order_id:poId,item_name:itemName,accepted_quantity:accepted,reviewer_note:note,evidence_id:evidenceId,confirmed_at:now()};
+   const entry:DeliveryConfirmation={id:old?.id||id(),business_id:businessId,purchase_order_id:poId,item_name:itemName,accepted_quantity:accepted,reviewer_note:note,evidence_id:evidenceId,confirmed_at:now(),shortfall_note:'',shortfall_accepted_at:null};
    if(old)Object.assign(old,entry);else d.deliveryConfirmations.push(entry);
    event(d,'delivery_reviewed',poId,actor,`Delivery accepted quantity for ${itemName}: ${accepted}`);
  });return {success:true};
@@ -126,6 +136,10 @@ export function issueOrderInvoice(poId: string, reference: string, issueDate: st
    invoice_number:reference.trim(),invoice_amount:q.amount,issue_date:issueDate,due_date:dueDate,status:'pending',labels:[],
    dispute_active:false,verification_hold:false,promise_to_pay_date:null,promise_confirmed:false,created_at:now()});
    event(d,'invoice_issued',poId,actor,`Invoice ${reference} created from accepted quotation; seller must verify legal document requirements`);
+   for(const note of d.creditNotes.filter(n=>n.purchase_order_id===poId&&!n.invoice_id)){const creditId=id();
+     d.credits.push({id:creditId,invoice_id:invoiceId,business_id:businessId,amount:note.amount,reason:`Credit note ${note.number}: ${note.reason}`,created_at:now()});
+     note.invoice_id=invoiceId;note.credit_id=creditId;
+     event(d,'credit_note_applied',poId,actor,`Credit note ${note.number} (${note.amount.toFixed(2)}) applied to invoice ${reference}`);}
  });return {success:true,id:invoiceId};
 }
 export function createPaymentClaim(invoiceId:string,amount:number,reference:string,evidenceId:string|null,
@@ -178,13 +192,17 @@ export function resolveOrderCase(caseId:string,note:string,actor:string,role:str
  event(d,'order_blocker_resolved',current.purchase_order_id,actor,`Seller resolved blocker: ${note}`);
  });return{success:true};
 }
-export function deriveOrderBlockers(poId:string):{reason:string;critical:boolean;source:string}[]{
+export interface OrderBlocker { reason:string; critical:boolean; source:string; kind?:'quantity_mismatch'; item_name?:string; shortfall?:number }
+export function deriveOrderBlockers(poId:string):OrderBlocker[]{
  const d=getStore();const po=d.purchaseOrders.find(x=>x.id===poId);if(!po)return[];
  const q=d.quotations.find(x=>x.purchase_order_id===poId);
  const invoice=d.invoices.find(x=>x.purchase_order_id===poId);
- const out:{reason:string;critical:boolean;source:string}[]=[];
+ const out:OrderBlocker[]=[];
  for(const item of po.details?.items||[]){const delivery=d.deliveryConfirmations.find(x=>x.purchase_order_id===poId&&x.item_name===item.name);
-   if(delivery&&delivery.accepted_quantity<item.quantity!)out.push({reason:`${item.name}: ordered ${item.quantity}, accepted ${delivery.accepted_quantity}`,critical:true,source:'Delivery confirmation vs PO'});
+   const credited=creditedQuantity(poId,item.name);
+   if(delivery&&!delivery.shortfall_accepted_at&&delivery.accepted_quantity+credited<item.quantity!)out.push({
+     reason:`${item.name}: ordered ${item.quantity}, accepted ${delivery.accepted_quantity}${credited?`, credited ${credited}`:''}`,critical:true,source:'Delivery confirmation vs PO',
+     kind:'quantity_mismatch',item_name:item.name,shortfall:item.quantity!-delivery.accepted_quantity-credited});
  }
  for(const issue of d.orderCases.filter(x=>x.purchase_order_id===poId&&x.status==='open'))out.push({reason:issue.reason,critical:true,source:`Seller-recorded ${issue.kind}`});
  if(!q)out.push({reason:'Quotation not prepared',critical:false,source:'Quotation'});
@@ -192,4 +210,65 @@ export function deriveOrderBlockers(poId:string):{reason:string;critical:boolean
  if(invoice?.verification_hold)out.push({reason:'Payment claim awaits verification',critical:true,source:'Payment claim'});
  if(invoice?.dispute_active)out.push({reason:'Invoice is under dispute/hold',critical:true,source:'Invoice review'});
  return out;
+}
+
+/** Seller issues a credit note for part of an item line that was not accepted (for example 20 of 100 damaged).
+ * Before invoicing it is held and applied when the invoice is created; after invoicing it lowers the balance at once
+ * and cancels reminders drafted for the old amount. The original quotation and invoice are never edited. */
+export function issueCreditNote(poId:string,itemName:string,quantity:number,reason:string,actor:string,role:string,businessId=DEMO_BUSINESS_ID){
+ seller(actor,role,businessId);const po=orderFor(poId,businessId);
+ const q=getStore().quotations.find(x=>x.purchase_order_id===poId&&x.business_id===businessId&&x.status==='accepted');
+ if(!q)throw Error('Record buyer acceptance of the quotation first');
+ if((po.details?.items.filter(i=>i.name===itemName).length||0)!==1)throw Error('Choose one order line');
+ const line=po.details!.items.find(i=>i.name===itemName)!;
+ const delivery=getStore().deliveryConfirmations.find(x=>x.purchase_order_id===poId&&x.item_name===itemName&&x.business_id===businessId);
+ if(!delivery)throw Error('Record the accepted quantity before issuing a credit note');
+ const shortfall=line.quantity!-delivery.accepted_quantity-creditedQuantity(poId,itemName);
+ if(!Number.isFinite(quantity)||quantity<=0)throw Error('Enter the quantity to credit');
+ if(quantity>shortfall)throw Error(`Credit quantity cannot exceed the shortfall (${shortfall})`);
+ if(!validText(reason,500)||!reason.trim())throw Error('Give the reason for the credit note');
+ const quoted=q.items.find(i=>i.name===itemName);
+ if(!quoted||!Number.isFinite(quoted.unit_price)||!quoted.quantity)throw Error('The accepted quotation has no price for this item');
+ const netUnit=(quoted.unit_price!*quoted.quantity-(quoted.discount||0))/quoted.quantity;
+ const amount=round2(quantity*netUnit);
+ if(!(amount>0))throw Error('Credit amount must be positive');
+ const invoice=getStore().invoices.find(x=>x.purchase_order_id===poId&&x.business_id===businessId);
+ if(invoice){const balance=computeInvoiceWithCustomer(invoice,getStore(),getStore().demoState.simulated_date).outstanding_balance;
+   if(amount>balance)throw Error('Credit amount exceeds the outstanding balance; review payments first');}
+ const noteId=id();let number='';
+ update(d=>{number=`CN-${po.reference}-${d.creditNotes.filter(n=>n.purchase_order_id===poId).length+1}`;
+   let creditId:string|null=null;let cancelled=0;
+   if(invoice){creditId=id();
+     d.credits.push({id:creditId,invoice_id:invoice.id,business_id:businessId,amount,reason:`Credit note ${number}: ${reason.trim()}`,created_at:now()});
+     for(const fu of d.followUpActions.filter(f=>f.invoice_id===invoice.id&&f.business_id===businessId&&f.send_state==='not_sent'&&['pending','approved'].includes(f.approval_state))){
+       Object.assign(fu,{send_state:'cancelled',approval_state:'cancelled',approved_by:null,approved_at:null,approved_message_hash:null,delivery_status:`Credit note ${number} changed the balance`});cancelled++;}
+   }
+   d.creditNotes.push({id:noteId,business_id:businessId,purchase_order_id:poId,invoice_id:invoice?.id||null,credit_id:creditId,number,item_name:itemName,
+     quantity,amount,reason:reason.trim(),created_at:now(),created_by:actor});
+   event(d,'credit_note_issued',poId,actor,`Credit note ${number}: ${quantity} x ${itemName} = ${amount.toFixed(2)} (${reason.trim()})${cancelled?`; ${cancelled} reminder(s) for the old amount cancelled`:''}`);
+ });
+ return {success:true,id:noteId,number,amount};
+}
+/** Seller decides a delivery shortfall needs no adjustment (for example the buyer agreed to pay in full). The reason is recorded. */
+export function acceptDeliveryShortfall(poId:string,itemName:string,reason:string,actor:string,role:string,businessId=DEMO_BUSINESS_ID){
+ seller(actor,role,businessId);const po=orderFor(poId,businessId);
+ const line=po.details?.items.find(i=>i.name===itemName);
+ const delivery=getStore().deliveryConfirmations.find(x=>x.purchase_order_id===poId&&x.item_name===itemName&&x.business_id===businessId);
+ if(!line||!delivery||delivery.accepted_quantity+creditedQuantity(poId,itemName)>=line.quantity!)throw Error('There is no open shortfall for this item');
+ if(!validText(reason,500)||!reason.trim())throw Error('Give the reason for keeping the amount unchanged');
+ update(d=>{const current=d.deliveryConfirmations.find(x=>x.id===delivery.id)!;
+   Object.assign(current,{shortfall_note:reason.trim(),shortfall_accepted_at:now()});
+   event(d,'delivery_shortfall_accepted',poId,actor,`No change for ${itemName} shortfall: ${reason.trim()}`);});
+ return {success:true};
+}
+
+/** Orders that cannot move to invoice or payment until the seller acts, with who acts next. */
+export function blockedOrders(businessId=DEMO_BUSINESS_ID):{order:PurchaseOrder;blockers:(OrderBlocker&{owner:string;action:string})[]}[]{
+ const d=getStore();
+ return d.purchaseOrders.filter(o=>o.business_id===businessId).map(order=>({order,blockers:deriveOrderBlockers(order.id).filter(b=>b.critical).map(b=>({...b,
+   owner:b.kind==='quantity_mismatch'||b.source.startsWith('Seller-recorded')||b.source==='Payment claim'||b.source==='Invoice review'?'Seller':'Buyer',
+   action:b.kind==='quantity_mismatch'?'Choose: deliver the rest, credit note or no change'
+     :b.source==='Payment claim'?'Check the bank or gateway, then verify or reject the claim'
+     :b.source==='Invoice review'?'Resolve the dispute before any reminder'
+     :'Review the issue and record a resolution'}))})).filter(x=>x.blockers.length);
 }

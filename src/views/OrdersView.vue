@@ -143,6 +143,7 @@ function orderProgress(order: PurchaseOrder) {
   const evidence=d.orderEvidence.filter(e=>e.purchase_order_id===order.id);
   const stages=orderStages({order,quotation:d.quotations.find(q=>q.purchase_order_id===order.id),evidence,
     deliveries:d.deliveryConfirmations.filter(c=>c.purchase_order_id===order.id),
+    creditNotes:(d.creditNotes||[]).filter(n=>n.purchase_order_id===order.id),
     invoice:inv?computeInvoiceWithCustomer(inv,d,d.demoState.simulated_date):null,
     receiptCount:d.settlementReceipts.filter(r=>r.purchase_order_id===order.id).length,
     criticalBlockers:deriveOrderBlockers(order.id).filter(b=>b.critical).length,money:formatMYR});

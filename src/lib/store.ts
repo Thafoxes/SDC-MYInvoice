@@ -48,7 +48,7 @@ function getSeedData(): StoreData {
     businesses: [{ id: 'biz-001', name: 'My business', display_name: null, currency: 'MYR', timezone: 'Asia/Kuala_Lumpur' }],
     users: [{ id: 'user-seller', business_id: 'biz-001', name: 'Seller', email: '', role: 'seller', avatar_color: '#1D72E0' }],
     customers: [], invoices: [], payments: [], credits: [], purchaseOrders: [],
-    quotations: [], orderEvidence: [], deliveryConfirmations: [], paymentClaims: [], settlementReceipts: [], orderCases: [],
+    quotations: [], orderEvidence: [], deliveryConfirmations: [], paymentClaims: [], settlementReceipts: [], orderCases: [], creditNotes: [],
     followUpActions: [], customerResponses: [], activityEvents: [], notifications: [], aiConversations: [],
     demoState: { business_id: 'biz-001', simulated_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()), last_check_at: null },
   };
@@ -60,7 +60,7 @@ let cache: StoreData | null = null;
 function migrate(data: StoreData): StoreData {
   data.purchaseOrders ??= [];
   data.quotations ??= []; data.orderEvidence ??= []; data.deliveryConfirmations ??= [];
-  data.paymentClaims ??= []; data.settlementReceipts ??= []; data.orderCases ??= [];
+  data.paymentClaims ??= []; data.settlementReceipts ??= []; data.orderCases ??= []; data.creditNotes ??= [];
   if (!data.sample_data_removed) {
     const customers = new Set(data.customers.filter(c => /^cust-(?:\d{2}|green|yellow|grey|delta)$/.test(c.id)).map(c => c.id));
     const invoices = new Set(data.invoices.filter(i => customers.has(i.customer_id) || /^(?:inv-10\d{2}|inv-delta-001|hist-(?:green|yellow)-\d+)$/.test(i.id)).map(i => i.id));

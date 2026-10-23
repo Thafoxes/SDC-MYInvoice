@@ -211,7 +211,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
     }])),
     ...Object.fromEntries(['approveFollowUp', 'rejectFollowUp', 'editFollowUpMessage', 'resolveVerificationHold', 'resolveDispute', 'confirmPromise', 'reviewCustomerPromise', 'simulateCustomerResponse', 'recordPayment', 'setCustomerLanguage'].map(key => [key, actions[key]])),
     ...Object.fromEntries(['attachOrderEvidence','saveQuotation','setQuotationDecision','confirmDelivery',
-      'issueOrderInvoice','createPaymentClaim','reviewPaymentClaim','setOrderCase','resolveOrderCase'].map(name => [name, (...args) => {
+      'issueOrderInvoice','createPaymentClaim','reviewPaymentClaim','setOrderCase','resolveOrderCase','issueCreditNote','acceptDeliveryShortfall'].map(name => [name, (...args) => {
         if (args[args.length - 1] !== businessId) throw Error('Business mismatch');
         if (name === 'attachOrderEvidence') {
           const evidenceId = args[1]?.id;

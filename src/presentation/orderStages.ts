@@ -3,7 +3,7 @@
  * It reads recorded facts and never authorises anything; the workflow commands still enforce every rule.
  */
 import type { PurchaseOrder } from '@/types';
-import type { Quotation, OrderEvidence, DeliveryConfirmation } from '@/lib/orderWorkflow';
+import type { Quotation, OrderEvidence, DeliveryConfirmation, CreditNote } from '@/lib/orderWorkflow';
 
 export type StageKey = 'order' | 'quotation' | 'buyer_po' | 'delivery' | 'invoice' | 'payment' | 'receipt';
 export type StageState = 'done' | 'current' | 'blocked' | 'todo' | 'skipped';
@@ -13,7 +13,8 @@ export interface StageInput {
   order: Pick<PurchaseOrder, 'status' | 'source_mode' | 'details'>;
   quotation?: Pick<Quotation, 'status' | 'reference'>;
   evidence: Pick<OrderEvidence, 'kind'>[];
-  deliveries: Pick<DeliveryConfirmation, 'item_name' | 'accepted_quantity'>[];
+  deliveries: Pick<DeliveryConfirmation, 'item_name' | 'accepted_quantity' | 'shortfall_accepted_at'>[];
+  creditNotes?: Pick<CreditNote, 'item_name' | 'quantity'>[];
   invoice?: { invoice_number: string; outstanding_balance: number; total_paid: number; dispute_active: boolean; verification_hold: boolean } | null;
   receiptCount: number;
   criticalBlockers: number;
@@ -43,10 +44,14 @@ export function orderStages(input: StageInput): OrderStage[] {
   const inv = input.invoice ?? null;
   const lines = (input.order.details?.items ?? []).map(item => ({
     item, delivery: input.deliveries.find(d => d.item_name === item.name),
+    credited: (input.creditNotes ?? []).filter(n => n.item_name === item.name).reduce((sum, n) => sum + n.quantity, 0),
   }));
-  const short = lines.filter(l => l.delivery && l.delivery.accepted_quantity < (l.item.quantity ?? 0));
+  const covered = (l: typeof lines[number]) => !!l.delivery && (l.delivery.accepted_quantity + l.credited >= (l.item.quantity ?? 0) || !!l.delivery.shortfall_accepted_at);
+  const short = lines.filter(l => l.delivery && !covered(l));
   const deliveryRecorded = lines.some(l => l.delivery);
-  const allAccepted = lines.length > 0 && lines.every(l => l.delivery && l.delivery.accepted_quantity >= (l.item.quantity ?? 0));
+  const allAccepted = lines.length > 0 && lines.every(covered);
+  const credited = lines.filter(l => l.credited > 0);
+  const kept = lines.filter(l => l.delivery?.shortfall_accepted_at);
 
   const raw: Record<StageKey, Raw> = {
     order: input.order.status === 'approved'
@@ -63,7 +68,9 @@ export function orderStages(input: StageInput): OrderStage[] {
       : { state: 'pending', detail: "Upload the buyer's PO, or skip if this buyer doesn't use POs" },
     delivery: short.length
       ? { state: 'blocked', detail: short.map(l => `${l.item.name}: ${l.delivery!.accepted_quantity} of ${l.item.quantity} accepted`).join('; ') }
-      : allAccepted ? { state: 'done', detail: 'All items accepted' }
+      : allAccepted ? { state: 'done', detail: credited.length
+          ? credited.map(l => `${l.delivery!.accepted_quantity} accepted, ${l.credited} credited`).join('; ')
+          : kept.length ? 'Shortfall kept with a reason' : 'All items accepted' }
       : deliveryRecorded ? { state: 'pending', detail: 'Record acceptance for the remaining items' }
       : inv ? { state: 'skipped', detail: 'Acceptance not recorded' }
       : { state: 'pending', detail: 'Record the quantity the buyer accepted' },

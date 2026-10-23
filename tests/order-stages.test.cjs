@@ -60,3 +60,14 @@ test('payment shows holds and part payments, and a settled order is completed', 
   assert.ok(paid.every(x => x.state === 'done'));
   assert.deepEqual(stageSummary(paid), { label: 'Completed', state: 'done' });
 });
+
+test('a credit note or a kept shortfall completes delivery', async () => {
+  const { orderStages } = await mod;
+  const accepted = { ...base, quotation: { status: 'accepted', reference: 'QT-1' }, deliveries: [{ item_name: 'Kuih box', accepted_quantity: 80 }] };
+  const credited = orderStages({ ...accepted, creditNotes: [{ item_name: 'Kuih box', quantity: 20 }] });
+  assert.equal(states(credited).delivery, 'done');
+  assert.equal(credited.find(x => x.key === 'delivery').detail, '80 accepted, 20 credited');
+  assert.equal(states(credited).invoice, 'current');
+  const kept = orderStages({ ...accepted, deliveries: [{ item_name: 'Kuih box', accepted_quantity: 80, shortfall_accepted_at: '2026-10-23' }] });
+  assert.equal(kept.find(x => x.key === 'delivery').detail, 'Shortfall kept with a reason');
+});
