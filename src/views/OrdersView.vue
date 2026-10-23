@@ -40,6 +40,13 @@ const intakeKey = ref(0);
 const reason = ref('');
 const activeOrderId = ref('');
 const activeOrder = computed(() => orders.value.find(order => order.id === activeOrderId.value));
+const calculatedTotal = computed(() => activeOrder.value?.details ? purchaseOrderTotal(activeOrder.value.details.items) : null);
+const totalMismatch = computed(() => {
+  const details = activeOrder.value?.details;
+  return !!details?.items.length && details.document_total !== null
+    && (calculatedTotal.value === null || Math.round(calculatedTotal.value * 100) !== Math.round(details.document_total * 100));
+});
+const needsOverride = computed(() => totalMismatch.value || eligibility.value?.allowed === false);
 const busy = ref(false);
 const showEditor = ref(false);
 const editorMode = ref<'create' | 'upload'>('create');
@@ -116,6 +123,12 @@ async function saveDraft(reference: string, details: PurchaseOrderDetails) {
 
 async function approve() {
   if (!activeOrder.value || busy.value) return;
+  if (formDirty.value) { error.value = 'Save the edited order details before approval.'; return; }
+  if (needsOverride.value) {
+    if (!reason.value.trim()) { error.value = 'Enter a reason for this seller override.'; return; }
+    const totals = totalMismatch.value ? `Calculated items: ${calculatedTotal.value ?? 'Unpriced'}. Printed total: ${activeOrder.value.details!.document_total}.\n` : '';
+    if (!window.confirm(`Approve order ${activeOrder.value.reference} with a seller override?\n${totals}Reason: ${reason.value.trim()}\nThis records an exception for this order only. Original amounts and existing invoice holds remain unchanged.`)) return;
+  }
   busy.value = true;
   error.value = '';
   notice.value = '';
@@ -192,14 +205,16 @@ function customerName(id: string) {
       <div v-if="activeOrder" class="border-t border-slate-100 pt-4 space-y-3">
         <p class="text-sm text-slate-700"><strong>{{ activeOrder.reference }}</strong> · {{ activeOrder.status === 'approved' ? 'Approved' : 'Draft — awaiting approval' }}</p>
         <form v-if="activeOrder.status === 'draft' && (!recordPage || recordMode === 'edit')" class="space-y-3" @submit.prevent="approve">
-          <label v-if="!eligibility.allowed && actor.role === 'seller'" class="block text-sm font-medium text-slate-700">Reason for allowing this order<textarea v-model.trim="reason" required maxlength="500" rows="3" class="form-input" placeholder="Explain why this specific order can proceed despite the hold." :disabled="busy" /></label>
+          <p v-if="totalMismatch" role="alert" class="text-sm text-amber-800">Items add up to {{ calculatedTotal === null ? 'an unknown amount (prices missing)' : calculatedTotal }} {{ activeOrder.details?.currency }}, but the buyer document total entered is {{ activeOrder.details?.document_total }} {{ activeOrder.details?.currency }}. For a direct order with no PO, open Edit order details and clear the optional document total, then save. If a real document has a different total, correct the items or record a seller exception.</p>
+          <label v-if="needsOverride && actor.role === 'seller'" class="block text-sm font-medium text-slate-700">Reason for allowing this order<textarea v-model.trim="reason" required maxlength="500" rows="3" class="form-input" placeholder="Explain why this specific order can proceed despite the total difference or customer hold." :disabled="busy" /></label>
           <p v-if="actor.role !== 'seller'" class="text-sm text-amber-800">Only a seller can approve an order or override. Ask the seller to review this draft.</p>
           <p v-if="formDirty" class="text-sm text-amber-800">Save the edited order details before approval.</p>
-          <button type="submit" class="primary-btn" :disabled="busy || formDirty || actor.role !== 'seller' || (!eligibility.allowed && !reason.trim())">{{ eligibility.allowed ? 'Approve order' : 'Approve this order with override' }}</button>
+          <button type="submit" class="primary-btn" :disabled="busy || formDirty || actor.role !== 'seller' || (needsOverride && !reason.trim())">{{ needsOverride ? 'Approve this order with override' : 'Approve order' }}</button>
         </form>
         <div v-if="activeOrder.override" class="rounded-lg bg-slate-50 p-3 text-sm text-slate-700 space-y-1">
           <p class="font-semibold">Seller override for this order</p>
           <p>{{ activeOrder.override.reason }}</p>
+          <p v-if="activeOrder.override.total_mismatch">Reviewed total difference: calculated {{ activeOrder.override.total_mismatch.calculated ?? 'Unpriced' }}; printed {{ activeOrder.override.total_mismatch.printed }} {{ activeOrder.details?.currency }}.</p>
           <p>Approved by {{ activeOrder.override.actor }} · {{ activeOrder.override.approved_at }}</p>
           <p>This approval does not clear previous disputes or apply to future orders.</p>
         </div>

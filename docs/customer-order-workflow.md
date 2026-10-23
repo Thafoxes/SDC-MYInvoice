@@ -14,7 +14,7 @@ Upload a PNG, JPG or PDF in **Purchase orders**, or enter the fields manually. O
 
 The original file bytes are stored in SQLite's `po_evidence` BLOB table with a SHA-256 hash, filename, content type, business and upload time. Repeated uploads of identical bytes reuse the evidence record within that business. Saving the PO links its evidence ID; use **Open original PO evidence** after reopening the order. The original remains unchanged when reviewed fields are corrected. It is not included in browser state snapshots.
 
-PO extraction enables Docling table recognition. Duplicate item rows are retained. Check each quantity, price and discount (an amount per line), and explicitly confirm the three-letter currency. A bare `$` does not establish USD. Calculated totals use rounded line values; a disagreement with the entered printed total prevents processing approval until corrected. A printed status such as “Closed Completed” or an approver's name is source text, not NudgeWise approval.
+PO extraction enables Docling table recognition. Duplicate item rows are retained. Check each quantity, price and discount (an amount per line), and explicitly confirm the three-letter currency. A bare `$` does not establish USD. Calculated totals use rounded line values; a disagreement with the entered printed total requires correction or an explicit seller override before processing approval. A printed status such as “Closed Completed” or an approver's name is source text, not NudgeWise approval.
 
 All fields remain editable on a draft; save changes before approval. Approved POs are read only. If AI extraction fails, the original is still retained and a manual-entry path is shown. The current worker is limited to five pages and 10 MiB. It may miss a footer total or other text, so missing fields must be confirmed manually.
 
@@ -42,7 +42,7 @@ Old snapshots gain an empty order collection without a reset. Active disputes an
 
 ## Seller override
 
-Seller or staff can save a buyer PO reference as a draft while held. Only the demo seller can approve processing. If held, a non-empty reason is required for an override. The order and activity log retain the reason, seller, time, and blocking invoice/balance snapshot.
+Seller or staff can save a buyer PO reference as a draft while held. Only the demo seller can approve processing. If held, or if calculated line totals differ from the printed total, a non-empty reason is required for an override. The seller must confirm the exception in a confirmation dialog. Total exceptions retain the calculated and printed amounts in the order and activity history; they do not change either amount. The order and activity log retain the reason, seller, time, and blocking invoice/balance snapshot.
 
 The exception applies to that order only. It never clears invoice disputes, changes balances, releases reminder holds, or approves another PO. The backend repeats the eligibility check during approval rather than trusting an earlier screen result.
 
@@ -81,3 +81,32 @@ This remains a shared-access demo: role/name checks enforce the simulated busine
 - `tests/customer-orders*.test.cjs`: domain and backend regression checks.
 
 For the full project relationships, see [the navigation guide](project-map.md) and [Graphify report](../graphify-out/GRAPH_REPORT.md).
+
+## Approve a reviewed order with an exception
+
+1. Open the draft order in edit mode. Save any unsaved changes first.
+2. Review the displayed customer hold and/or calculated-versus-printed totals.
+3. Correct mistakes when possible. For a direct order with no buyer PO, leave the printed total blank rather than inventing a document total.
+4. If the seller decides the order can proceed despite a hold or total difference, enter a specific reason under **Reason for allowing this order**.
+5. Click **Approve this order with override**. Review the order reference, totals (when applicable), and reason in the confirmation dialog, then confirm or cancel.
+6. The approved order shows the exception, seller, time and any total discrepancy. Approval makes the order read only. This does not settle invoices, clear disputes, or authorize future orders; delivery and invoicing retain their own checks.
+
+Seller identity remains simulated in this demo. An override is a recorded processing exception, not evidence of buyer acceptance or bank settlement.
+
+## Direct orders, quotations and revisions
+
+A buyer does not need to issue a PO. Choose **Create order**, select the customer, and enter the requested items (or review a chat screenshot). Prices may be blank initially. **Total printed on buyer’s document** is optional: leave it blank when there is no buyer PO. It is a monetary total from a real document, not an item count or quotation number. For example, items worth MYR 760 and a document total entered as MYR 1 differ by MYR 759; correct that field or clear it when there is no document total.
+
+1. Save the order draft. The quotation starts with the order / PO items. **Copy items and terms from order / PO** reloads those values into the quotation editor; it does not save automatically.
+2. Edit quotation items, quantities, unit prices, line discounts and terms. Sent, rejected and revision-requested quotations remain editable until accepted. Saving a revision resets it to draft and preserves the previous quotation in activity history.
+3. Save all quotation edits before recording a buyer response. Record a request/revision note if needed. Uploading evidence is optional; an agreement screenshot or request can be uploaded directly beside the response form.
+4. For **Accepted**, either enter how the buyer agreed or select attached evidence. Seller confirmation is still required; uploading a file alone does not approve anything.
+5. Acceptance copies the quotation’s item rows, currency and payment terms into the order. Use **Copy agreed quotation to order** to apply an already-accepted quotation to an existing order before delivery or invoicing. The original uploaded PO and its printed total are retained as evidence. Accepted quotation items and terms are locked.
+6. If copying changed an already-approved order, it returns to draft and needs seller processing approval again. Review totals and customer holds; correct the optional document total or record a reasoned exception where appropriate.
+7. Continue with delivery and invoicing. The invoice uses the accepted quotation amount. Later delivery/invoice records cannot be rewritten through quotation edits.
+
+## Downloading order, quotation and invoice PDFs
+
+The document download buttons include supplier and buyer names, addresses, phone numbers and emails. Buyer contacts use the saved customer record, with order/PO fields as a fallback; supplier contacts use the order/PO fields. Missing values print as `-`. The business record currently stores the supplier name but has no separate address/phone settings.
+
+Items print in a bordered table: item/code, quantity, unit price, line discount and line total. Unknown prices print as `-`; long tables repeat their headers on subsequent pages. Invoice items use the quotation when available. These demo PDFs use built-in ASCII fonts; multilingual documents require a Unicode-capable renderer.

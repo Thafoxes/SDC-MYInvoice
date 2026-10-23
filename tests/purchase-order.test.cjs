@@ -151,3 +151,27 @@ test('draft edits persist but mismatched totals prevent approval and approved PO
   assert.equal(orders.approvePurchaseOrder(order.id,'Seller','seller').success,true);
   assert.equal(orders.updatePurchaseOrder(order.id,'CHANGED',details,'Seller','seller').success,false);
 });
+
+test('seller can confirm a total mismatch through the API with an audited one-order reason', async t => {
+  const { backend } = fixture(t);
+  const customer = orders.createCustomer({name:'Buyer',phone:'+60122220000',email:''},'Seller','seller');
+  const details = {...extraction().details, currency:'MYR', document_total:999};
+  const order = orders.createPurchaseOrder(customer.id,'DIRECT-001','Seller','seller','biz-001',details,'manual');
+  const approve = (role, business, reason) => request(backend,'POST','/api/command',{
+    name:'approvePurchaseOrder',args:[order.id,'Seller',role,business,reason]});
+  for (const reason of ['', '   ', 'x'.repeat(501)])
+    assert.equal((await approve('seller','biz-001',reason)).body.result.success,false);
+  assert.equal((await approve('staff','biz-001','Reviewed difference')).body.result.success,false);
+  assert.equal((await approve('seller','other-business','Reviewed difference')).body.result.success,false);
+  assert.equal(store.getStore().purchaseOrders[0].status,'draft');
+  const reason = 'Buyer ordered directly; seller reviewed the original total difference';
+  assert.equal((await approve('seller','biz-001',reason)).body.result.success,true);
+  const saved = store.getStore().purchaseOrders.find(o=>o.id===order.id);
+  assert.equal(saved.status,'approved');
+  assert.equal(saved.override.reason,reason);
+  assert.deepEqual(saved.override.total_mismatch,{calculated:228.47,printed:999});
+  assert.equal(saved.details.document_total,999);
+  assert.equal(store.getStore().activityEvents.find(e=>e.event_type==='purchase_order_override').metadata.override.reason,reason);
+  const next = orders.createPurchaseOrder(customer.id,'DIRECT-002','Seller','seller','biz-001',details,'manual');
+  assert.equal(orders.approvePurchaseOrder(next.id,'Seller','seller').success,false);
+});

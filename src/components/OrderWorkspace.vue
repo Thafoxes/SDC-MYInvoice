@@ -5,8 +5,8 @@ import { useDemoStore } from '@/composables/useDemoStore';
 import { DEMO_BUSINESS_ID, DEMO_SELLER_ID, computeInvoiceWithCustomer } from '@/lib/store';
 import { deriveOrderBlockers } from '@/lib/orderWorkflow';
 import { purchaseOrderTotal } from '@/lib/purchaseOrder';
-import { downloadDocumentPdf } from '@/lib/documentPdf';
-import { saveQuotation,setQuotationDecision,confirmDelivery,issueOrderInvoice,createPaymentClaim,reviewPaymentClaim,
+import { downloadDocumentPdf, documentContactSections } from '@/lib/documentPdf';
+import { saveQuotation,copyQuotationToOrder,setQuotationDecision,confirmDelivery,issueOrderInvoice,createPaymentClaim,reviewPaymentClaim,
  setOrderCase,resolveOrderCase,uploadOrderEvidence,attachOrderEvidence,issueCreditNote,acceptDeliveryShortfall,issueDebitNote } from '@/services/commands';
 import type { OrderEvidence } from '@/lib/orderWorkflow';
 import { Check, AlertTriangle, Minus, FileText } from 'lucide-vue-next';
@@ -35,6 +35,7 @@ const blockers=computed(()=>{void data.value;return deriveOrderBlockers(props.or
 const activity=computed(()=>data.value.activityEvents.filter(e=>e.metadata?.order_id===props.order.id).slice(0,20));
 const busy=ref(false),notice=ref(''),error=ref('');
 const qform=reactive({reference:'',currency:'MYR',payment_terms:'',delivery_terms:'',valid_until:'',items:[] as PurchaseOrderItem[]});
+const quotationDirty=computed(()=>!!quote.value && JSON.stringify({reference:qform.reference,items:qform.items,currency:qform.currency.toUpperCase(),payment_terms:qform.payment_terms,delivery_terms:qform.delivery_terms,valid_until:qform.valid_until})!==JSON.stringify({reference:quote.value.reference,items:quote.value.items,currency:quote.value.currency,payment_terms:quote.value.payment_terms,delivery_terms:quote.value.delivery_terms,valid_until:quote.value.valid_until}));
 const buyerNote=ref(''),buyerEvidence=ref(''),decision=ref<'sent'|'accepted'|'revision_requested'|'rejected'>('sent');
 const invForm=reactive({reference:'',issue_date:'',due_date:''});
 const claimForm=reactive({amount:null as number|null,reference:'',evidence_id:''});
@@ -70,6 +71,8 @@ watch(()=>props.order.id,()=>{
  invForm.due_date='';claimForm.amount=null;claimForm.reference='';claimForm.evidence_id='';
  deliveryForm.name=props.order.details?.items[0]?.name||'';deliveryForm.accepted=null;deliveryForm.note='';buyerNote.value='';buyerEvidence.value='';
 }, {immediate:true});
+watch(()=>quote.value?.updated_at,()=>{const q=quote.value;if(q)Object.assign(qform,{reference:q.reference,items:structuredClone(q.items),currency:q.currency,payment_terms:q.payment_terms,delivery_terms:q.delivery_terms,valid_until:q.valid_until});});
+function copyOrderItems(){qform.items=structuredClone(props.order.details?.items||[]);qform.currency=props.order.details?.currency||'MYR';qform.payment_terms=props.order.details?.payment_terms||'';}
 async function run(callback:()=>Promise<unknown>){busy.value=true;error.value='';notice.value='';
  try { const result=await callback() as {success?:boolean;error?:string}|undefined;
   if(result?.success===false)throw Error(result.error||'Action failed');
@@ -79,18 +82,19 @@ async function run(callback:()=>Promise<unknown>){busy.value=true;error.value=''
 function args(){return [actor.value.name,actor.value.role,DEMO_BUSINESS_ID] as const;}
 function saveQuote(){void run(()=>saveQuotation(props.order.id,{reference:qform.reference,items:qform.items,currency:qform.currency.toUpperCase(),
  payment_terms:qform.payment_terms,delivery_terms:qform.delivery_terms,valid_until:qform.valid_until},...args()));}
-function setDecision(){if(!quote.value)return;void run(()=>setQuotationDecision(quote.value!.id,decision.value,buyerNote.value,buyerEvidence.value||null,...args()));}
+function setDecision(){if(!quote.value)return;if(quotationDirty.value){error.value='Save quotation changes before recording the buyer response.';return;}void run(()=>setQuotationDecision(quote.value!.id,decision.value,buyerNote.value,buyerEvidence.value||null,...args()));}
 function makeInvoice(){void run(()=>issueOrderInvoice(props.order.id,invForm.reference,invForm.issue_date,invForm.due_date,...args()));}
 function submitClaim(){if(!invoice.value)return;void run(()=>createPaymentClaim(invoice.value!.id,Number(claimForm.amount),claimForm.reference,claimForm.evidence_id||null,...args()));}
 function verifyClaim(id:string,yes:boolean){void run(()=>reviewPaymentClaim(id,yes,verificationNotes[id]||'',...args()));}
 function confirmDeliveryAction(){void run(()=>confirmDelivery(props.order.id,deliveryForm.name,Number(deliveryForm.accepted),deliveryForm.note,deliveryForm.evidence_id||null,...args()));}
 function addCase(){void run(()=>setOrderCase(props.order.id,caseForm.kind,caseForm.reason,...args()));}
 function resolveCase(id:string){void run(()=>resolveOrderCase(id,resolutionNotes[id]||'',...args()));}
-async function upload(event:Event){const input=event.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;
+async function upload(event:Event,kind:OrderEvidence['kind']=evidenceKind.value,selectForBuyer=false){const input=event.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;
  uploading.value=true;error.value='';notice.value='';try{
   const result=await uploadOrderEvidence(file);
   await attachOrderEvidence(props.order.id,{id:result.evidence.id,filename:result.evidence.filename,
-   mime_type:result.evidence.content_type,kind:evidenceKind.value,extracted_text:result.extracted_text},...args());
+   mime_type:result.evidence.content_type,kind,extracted_text:result.extracted_text},...args());
+  if(selectForBuyer)buyerEvidence.value=result.evidence.id;
   refreshStore();notice.value='Original evidence saved. Its content does not automatically establish agreement or settlement.';
  }catch(e){error.value=e instanceof Error?e.message:'Upload failed';}finally{uploading.value=false;input.value='';}
 }
@@ -125,17 +129,17 @@ const invoiceGate=computed(()=>{
 const pendingCredit=computed(()=>creditNotes.value.filter(n=>!n.invoice_id).reduce((s,n)=>s+n.amount,0));
 function asMoney(n:number|null|undefined){return `${quote.value?.currency||props.order.details?.currency||'MYR'} ${(n||0).toFixed(2)}`;}
 function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
- const po=props.order;const lines=(kind==='quote'?quote.value?.items:po.details?.items)||[];
+ const po=props.order;const lines=((kind==='quote'||kind==='invoice')?quote.value?.items||po.details?.items:po.details?.items)||[];
  const title=kind==='po'?'ORDER SUMMARY FOR BUYER REVIEW':kind==='quote'?'QUOTATION':kind==='invoice'?'INVOICE TRACKING COPY':'PAYMENT RECEIPT';
  const reference=kind==='po'?po.reference:kind==='quote'?quote.value?.reference:kind==='invoice'?invoice.value?.invoice_number:receipts.value.find(r=>r.id===receiptId)?.receipt_number;
- const sections=[{heading:'Document information',lines:[`Reference: ${reference||'N/A'}`,`Customer: ${customer.value?.name||'N/A'}`,
-   `Seller: ${data.value.businesses.find(b=>b.id===DEMO_BUSINESS_ID)?.name||'Seller'}`,`Status: ${kind==='quote'?quote.value?.status:kind==='po'?po.status:'Seller recorded'}`]}];
+ const sections=[{heading:'Document information',lines:[`Reference: ${reference||'-'}`,`Status: ${kind==='quote'?quote.value?.status:kind==='po'?po.status:'Seller recorded'}`]},
+  ...documentContactSections(data.value.businesses.find(b=>b.id===DEMO_BUSINESS_ID),customer.value,po.details)];
  if(kind==='receipt'){
   const rec=receipts.value.find(r=>r.id===receiptId);sections.push({heading:'Seller-verified settlement',lines:[
    `Invoice: ${invoice.value?.invoice_number||'N/A'}`,`Payment received: ${asMoney(rec?.amount)}`,`Verified / recorded: ${rec?.issued_at||''}`]});
  }else{
-  sections.push({heading:'Items',lines:lines.map((line,i)=>`${i+1}. ${line.name} | Qty ${line.quantity} | Price ${line.unit_price??'TBC'} | Discount ${line.discount??0}`)});
-  sections.push({heading:'Commercial terms',lines:[`Total: ${asMoney(kind==='quote'?quote.value?.amount:kind==='invoice'?invoice.value?.invoice_amount:purchaseOrderTotal(lines))}`,
+  sections.push({heading:`Items (${quote.value?.currency||po.details?.currency||'MYR'})`,lines:[],items:lines});
+  sections.push({heading:'Commercial terms',lines:[`Total: ${(kind==='po' && purchaseOrderTotal(lines)===null)?'-':asMoney(kind==='quote'?quote.value?.amount:kind==='invoice'?invoice.value?.invoice_amount:purchaseOrderTotal(lines))}`,
    `Payment terms: ${quote.value?.payment_terms||po.details?.payment_terms||'To be confirmed'}`,
    `Delivery terms: ${quote.value?.delivery_terms||'To be confirmed'}`]});
  }
@@ -182,20 +186,30 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
    <div v-if="evidence.length" class="space-y-1 text-sm"><div v-for="e in evidence" :key="e.id" class="flex justify-between gap-2 border-b py-1"><span>{{e.kind.replace(/_/g,' ')}} · {{e.filename}}</span><a class="text-blue-700 underline" :href="`/api/po-evidence/${e.id}`" target="_blank" rel="noopener">View original</a></div></div>
   </div>
   <div id="stage-quotation" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><div class="flex justify-between"><h4 class="font-semibold">Quotation</h4><button v-if="quote" class="outline-btn" @click="download('quote')">Download PDF</button></div>
-    <p class="text-xs text-slate-600">Confirm prices and terms before saving a quotation. Drafts are not buyer acceptance.</p>
-    <div v-if="!quote||quote.status==='draft'" class="space-y-3">
+    <p class="text-xs text-slate-600">Copy items from the order / uploaded PO, then edit names, quantities, prices and terms until the buyer agrees. Saving revisions returns the quotation to draft. Acceptance copies agreed items and terms into the order; changed processing approvals must be reviewed again.</p>
+    <button v-if="quote?.status==='accepted'&&!invoice&&!delivery.length" class="outline-btn" :disabled="busy" @click="run(()=>copyQuotationToOrder(quote!.id,...args()))">Copy agreed quotation to order</button>
+    <div v-if="!quote||quote.status!=='accepted'" class="space-y-3">
      <div class="grid sm:grid-cols-3 gap-2"><label class="text-xs">Reference<input v-model="qform.reference" class="form-input" maxlength="80" /></label>
       <label class="text-xs">Currency<input v-model="qform.currency" class="form-input" maxlength="3" /></label>
       <label class="text-xs">Valid until<input type="date" v-model="qform.valid_until" class="form-input" /></label></div>
      <div class="grid sm:grid-cols-2 gap-2"><label class="text-xs">Payment terms<input v-model="qform.payment_terms" class="form-input" /></label><label class="text-xs">Delivery terms<input v-model="qform.delivery_terms" class="form-input" /></label></div>
-     <div v-for="(line,i) in qform.items" :key="i" class="grid grid-cols-6 items-end gap-2 text-xs"><span class="col-span-3">{{line.name}} · Qty {{line.quantity}}</span><label class="col-span-2">Unit price<input v-model.number="line.unit_price" type="number" min="0" step="0.01" class="form-input" /></label><label>Discount<input v-model.number="line.discount" type="number" min="0" step="0.01" class="form-input" /></label></div>
+     <button type="button" class="outline-btn" :disabled="busy" @click="copyOrderItems">Copy items and terms from order / PO</button>
+     <div v-for="(line,i) in qform.items" :key="i" class="grid sm:grid-cols-5 gap-2 text-xs">
+      <label>Item<input v-model="line.name" class="form-input" /></label><label>Quantity<input v-model.number="line.quantity" type="number" min="0.01" step="any" class="form-input" /></label>
+      <label>Unit price<input v-model.number="line.unit_price" type="number" min="0" step="0.01" class="form-input" /></label><label>Line discount (amount)<input v-model.number="line.discount" type="number" min="0" step="0.01" class="form-input" /></label>
+      <button type="button" class="outline-btn" :disabled="busy" @click="qform.items.splice(i,1)">Remove item</button>
+     </div>
+     <button type="button" class="outline-btn" :disabled="busy||qform.items.length>=100" @click="qform.items.push({name:'',code:'',quantity:1,unit_price:null,discount:0})">Add quotation item</button>
      <button class="primary-btn" :disabled="busy||!qform.items.length" @click="saveQuote">Save quotation draft</button>
     </div><p v-if="quote" class="text-sm">{{quote.reference}} · {{asMoney(quote.amount)}} · {{quote.status}}</p>
-    <div v-if="quote&&quote.status!=='accepted'&&quote.status!=='rejected'" class="space-y-2 border-t pt-3"><h5 class="font-semibold text-sm">Record buyer response (seller confirmation)</h5>
+    <div v-if="quote&&quote.status!=='accepted'" class="space-y-2 border-t pt-3"><h5 class="font-semibold text-sm">Record buyer response (seller confirmation)</h5>
      <select class="form-input !mt-0" v-model="decision"><option value="sent">Sent manually</option><option value="accepted">Accepted</option><option value="revision_requested">Revision requested</option><option value="rejected">Rejected</option></select>
+     <label class="block text-xs">Upload buyer agreement or request (optional)<input type="file" accept="image/png,image/jpeg,application/pdf" class="block mt-1 text-sm" :disabled="uploading||busy" @change="upload($event,'buyer_approval',true)" /></label>
      <textarea v-model="buyerNote" rows="2" class="form-input" placeholder="How was the buyer decision confirmed? Include message/date or approval reference." />
-     <select v-model="buyerEvidence" class="form-input !mt-0"><option value="">No attached buyer confirmation</option><option v-for="e in evidence.filter(x=>x.kind==='buyer_approval')" :key="e.id" :value="e.id">{{e.filename}}</option></select>
-     <button class="primary-btn" :disabled="busy" @click="setDecision">Record buyer response</button>
+     <select v-model="buyerEvidence" class="form-input !mt-0"><option value="">No attached buyer confirmation</option><option v-for="e in evidence.filter(x=>['buyer_approval','chat_screenshot','other'].includes(x.kind))" :key="e.id" :value="e.id">{{e.filename}}</option></select>
+     <p class="text-xs text-slate-600">A confirmation note is required for acceptance unless you attach evidence. Upload optional proof under supporting evidence, then select it here. Saving a revision requires fresh buyer acceptance.</p>
+     <p v-if="quotationDirty" role="status" class="text-sm text-amber-800">Save quotation changes before recording the buyer response.</p>
+     <button class="primary-btn" :disabled="busy||uploading||quotationDirty" @click="setDecision">Record buyer response</button>
     </div>
   </div>
   <div id="stage-delivery" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Delivery and acceptance</h4>

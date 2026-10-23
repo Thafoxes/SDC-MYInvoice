@@ -2,7 +2,7 @@
  * Commands validate against server-loaded state. Uploaded evidence is NOT approval. */
 import { getStore, update, computeInvoiceWithCustomer, DEMO_BUSINESS_ID } from './store';
 import type { PurchaseOrderItem, PurchaseOrder } from '@/types';
-import { purchaseOrderTotal } from './purchaseOrder';
+import { purchaseOrderTotal, validatePurchaseOrderDetails } from './purchaseOrder';
 
 export interface Quotation {
  id: string; business_id: string; purchase_order_id: string; reference: string;
@@ -75,25 +75,43 @@ export function saveQuotation(poId: string, input: Pick<Quotation,'reference'|'i
  if (!input || !validText(input.reference,80) || !input.reference.trim() || !/^[A-Z]{3}$/.test(input.currency)
    || !validText(input.payment_terms,500) || !validText(input.delivery_terms,500) || !validText(input.valid_until,10)
    || (input.valid_until && !/^\d{4}-\d{2}-\d{2}$/.test(input.valid_until))) throw Error('Check quotation details');
- if (!Array.isArray(input.items) || input.items.length !== po.details.items.length) throw Error('Quotation items must match the order line count');
- const lines: PurchaseOrderItem[] = input.items.map((line, i) => {
-   const source = po.details!.items[i];
-   if (!line || line.name !== source.name || line.quantity !== source.quantity || !Number.isFinite(line.unit_price)
-     || line.unit_price! < 0 || !Number.isFinite(line.discount) || line.discount! < 0 || line.discount! > line.quantity! * line.unit_price!) throw Error(`Review quotation price for line ${i+1}`);
-   return { name: source.name, code: source.code, quantity: source.quantity, unit_price: line.unit_price, discount: line.discount };
- });
+ const lines = validatePurchaseOrderDetails({...po.details, currency:input.currency, items:input.items, document_total:null}).items;
+ if (getStore().invoices.some(i=>i.purchase_order_id===poId) || getStore().deliveryConfirmations.some(d=>d.purchase_order_id===poId))
+   throw Error('Delivery or invoicing has started; preserve the agreed quotation');
  const total = purchaseOrderTotal(lines);
  if (total === null || total <= 0 || total > 1e9) throw Error('Quotation total must be positive');
  const old = getStore().quotations.find(q => q.purchase_order_id === poId && q.business_id === businessId);
- if (old && old.status !== 'draft') throw Error('Only draft quotations can be edited; preserve accepted quotation history');
+ if (old?.status === 'accepted') throw Error('Accepted quotations cannot be edited; preserve buyer agreement');
+ const previousQuotation = old ? structuredClone(old) : null;
  const qid = old?.id || id();
  update(d => { const q: Quotation = { id: qid, purchase_order_id: poId, business_id: businessId, reference: input.reference.trim(),
     currency: input.currency, items: lines, amount: total, payment_terms: input.payment_terms.trim(), delivery_terms: input.delivery_terms.trim(),
     valid_until: input.valid_until, status: 'draft', buyer_decision_note: '', buyer_decision_evidence_id: null, created_at: old?.created_at || now(), updated_at: now() };
    if (old) Object.assign(d.quotations.find(x=>x.id===qid)!,q); else d.quotations.push(q);
    event(d,'quotation_saved',poId,actor,`Quotation ${q.reference} saved as draft for seller review`);
+   if (old) d.activityEvents[0].metadata = {...d.activityEvents[0].metadata, previous_quotation:previousQuotation};
  });
  return { success: true, id: qid };
+}
+function copyAgreedDetails(d: ReturnType<typeof getStore>, order: PurchaseOrder, q: Quotation) {
+ if (order.details) {
+     const savedOrder=d.purchaseOrders.find(o=>o.id===order.id)!;
+     const changed=JSON.stringify(order.details.items)!==JSON.stringify(q.items) || order.details.currency!==q.currency || order.details.payment_terms!==q.payment_terms;
+     savedOrder.details={...order.details,items:structuredClone(q.items),currency:q.currency,payment_terms:q.payment_terms};
+     if(changed && savedOrder.status==='approved') {
+       savedOrder.status='draft'; delete savedOrder.approved_by; delete savedOrder.approved_at; delete savedOrder.override;
+     }
+   }
+}
+export function copyQuotationToOrder(quotationId:string,actor:string,role:string,businessId=DEMO_BUSINESS_ID) {
+ seller(actor,role,businessId);
+ const q=getStore().quotations.find(q=>q.id===quotationId && q.business_id===businessId && q.status==='accepted');
+ if(!q)throw Error('An accepted quotation is required');
+ const order=orderFor(q.purchase_order_id,businessId);
+ if(getStore().deliveryConfirmations.some(d=>d.purchase_order_id===order.id) || getStore().invoices.some(i=>i.purchase_order_id===order.id))
+   throw Error('Delivery or invoicing has started; preserve the agreed order');
+ update(d=>{copyAgreedDetails(d,order,q);event(d,'quotation_copied_to_order',order.id,actor,`Agreed quotation ${q.reference} copied to order; changed processing approvals require review`);});
+ return {success:true};
 }
 export function setQuotationDecision(quotationId: string, status: Quotation['status'], note: string,
  evidenceId: string | null, actor: string, role: string, businessId = DEMO_BUSINESS_ID) {
@@ -103,9 +121,13 @@ export function setQuotationDecision(quotationId: string, status: Quotation['sta
  if (!['sent','accepted','revision_requested','rejected'].includes(status) || q.status === 'accepted') throw Error('Invalid quotation transition');
  if (!validText(note,1000) || (status === 'accepted' && !note.trim() && !evidenceId)) throw Error('Record how buyer acceptance was confirmed');
  if (evidenceId && !getStore().orderEvidence.some(e=>e.id===evidenceId && e.purchase_order_id===q.purchase_order_id && e.business_id===businessId)) throw Error('Confirmation evidence not linked to PO');
+ const order = orderFor(q.purchase_order_id,businessId);
+ if (status === 'accepted' && (getStore().invoices.some(i=>i.purchase_order_id===order.id) || getStore().deliveryConfirmations.some(d=>d.purchase_order_id===order.id)))
+   throw Error('Delivery or invoicing has started; preserve the recorded order');
  update(d => { const current=d.quotations.find(x=>x.id===quotationId)!;
    Object.assign(current,{status,buyer_decision_note:note.trim(),buyer_decision_evidence_id:evidenceId,updated_at:now()});
-   event(d,'quotation_decision',q.purchase_order_id,actor,`Quotation ${q.reference}: ${status} (seller recorded buyer response)`);
+   if (status === 'accepted') copyAgreedDetails(d,order,q);
+   event(d,'quotation_decision',q.purchase_order_id,actor,`Quotation ${q.reference}: ${status} (seller recorded buyer response)${status==='accepted'?'; agreed items and terms copied to order; changed approvals require review':''}`);
  });
  return { success: true };
 }

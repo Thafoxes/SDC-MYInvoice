@@ -87,7 +87,8 @@ export interface PurchaseOrder {
   source_mode?: 'manual' | 'chat_screenshot' | 'uploaded_po';
   approved_at?: string;
   approved_by?: string;
-  override?: { reason: string; actor: string; approved_at: string; blockers: OrderBlocker[] };
+  override?: { reason: string; actor: string; approved_at: string; blockers: OrderBlocker[];
+    total_mismatch?: { calculated: number | null; printed: number } };
 }
 
 export interface PurchaseOrderItem {

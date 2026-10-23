@@ -130,11 +130,13 @@ export function updatePurchaseOrder(orderId: string, reference: string, details:
   if (!permittedActor(actorName, actorRole, businessId)) return { success: false, error: 'Seller or staff authorization required' };
   const order = getStore().purchaseOrders.find(o => o.id === orderId && o.business_id === businessId);
   if (!order || order.status !== 'draft') return { success: false, error: 'Only a draft PO in this business can be edited' };
-  if (getStore().quotations.some(q => q.purchase_order_id === orderId && q.status !== 'draft')) return { success: false, error: 'Order has a sent or approved quotation. Preserve agreement; create a reviewed revision instead.' };
   if (!boundedText(reference, 100) || !reference.trim()) return { success: false, error: 'Enter a PO reference' };
   if (getStore().purchaseOrders.some(o => o.id !== orderId && o.business_id === businessId && o.customer_id === order.customer_id && o.reference.toLowerCase() === reference.trim().toLowerCase())) return { success: false, error: 'Duplicate PO reference for this customer' };
   let confirmed: PurchaseOrderDetails;
   try { confirmed = validatePurchaseOrderDetails(details); } catch (error) { return { success: false, error: (error as Error).message }; }
+  const accepted = getStore().quotations.find(q=>q.purchase_order_id===orderId && q.status==='accepted');
+  if (accepted && (JSON.stringify(confirmed.items)!==JSON.stringify(accepted.items) || confirmed.currency!==accepted.currency || confirmed.payment_terms!==accepted.payment_terms))
+    return {success:false,error:'Items, prices and terms must match the accepted quotation. You can correct the optional document total without changing the agreement.'};
   update(data => {
     Object.assign(data.purchaseOrders.find(o => o.id === orderId)!, { reference: reference.trim(), details: confirmed });
     data.activityEvents.unshift({ id: crypto.randomUUID(), business_id: businessId, invoice_id: null, event_type: 'purchase_order_updated', actor: actorName, actor_role: actorRole,
@@ -148,15 +150,18 @@ export function approvePurchaseOrder(orderId: string, actorName: string, actorRo
   const order = getStore().purchaseOrders.find(o => o.id === orderId && o.business_id === businessId);
   if (!order) return { success: false, error: 'Order not found for this business' };
   if (order.status !== 'draft') return { success: false, error: 'This order has already been approved' };
-  if (order.details?.items.length && order.details.document_total !== null && Math.round(purchaseOrderTotal(order.details.items)! * 100) !== Math.round(order.details.document_total * 100))
-    return { success: false, error: 'The line items do not match the printed total. Review the PO details before approval.' };
+  const calculatedTotal = order.details ? purchaseOrderTotal(order.details.items) : null;
+  const totalMismatch = !!order.details?.items.length && order.details.document_total !== null
+    && (calculatedTotal === null || Math.round(calculatedTotal * 100) !== Math.round(order.details.document_total * 100));
   if (!getStore().customers.some(c => c.id === order.customer_id && c.business_id === businessId)) return { success: false, error: 'Order customer no longer exists in this business' };
   const eligibility = getOrderEligibility(order.customer_id, businessId);
-  if (!eligibility.allowed && (!boundedText(overrideReason, 500) || !overrideReason.trim()))
-    return { success: false, error: 'Order on hold. Seller must enter a reason to override for this order.' };
+  const needsOverride = !eligibility.allowed || totalMismatch;
+  if (needsOverride && (!boundedText(overrideReason, 500) || !overrideReason.trim()))
+    return { success: false, error: totalMismatch ? 'The line items do not match the printed total. Correct the details or enter a seller override reason for this order.' : 'Order on hold. Seller must enter a reason to override for this order.' };
   const now = new Date().toISOString();
-  const override: PurchaseOrder['override'] = eligibility.allowed ? undefined : {
+  const override: PurchaseOrder['override'] = !needsOverride ? undefined : {
     reason: overrideReason!.trim(), actor: actorName, approved_at: now, blockers: eligibility.blockers,
+    ...(totalMismatch ? { total_mismatch: { calculated: calculatedTotal, printed: order.details!.document_total! } } : {}),
   };
   update(data => {
     const current = data.purchaseOrders.find(o => o.id === orderId && o.business_id === businessId)!;

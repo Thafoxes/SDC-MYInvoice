@@ -40,7 +40,10 @@ function command<F extends (...args: any[]) => any>(name: string, local: F) {
       const response = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Nudgewise-Local': '1' }, body: JSON.stringify({ name, args }) });
       checkAccess(response);
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'Operation failed');
+      if (!response.ok) {
+        console.error(`Command ${name} failed (HTTP ${response.status}):`, body.error || 'Operation failed');
+        throw new Error(body.error || 'Operation failed');
+      }
       ++requestRevision;
       store.replaceSnapshot(body.data); connectionError.value = ''; refreshStore();
       return body.result;
@@ -98,6 +101,7 @@ export function extractPurchaseOrderDocument(file: File, actorRole = 'seller'): 
 }
 export const attachOrderEvidence = command('attachOrderEvidence', workflow.attachOrderEvidence);
 export const saveQuotation = command('saveQuotation', workflow.saveQuotation);
+export const copyQuotationToOrder = command('copyQuotationToOrder', workflow.copyQuotationToOrder);
 export const setQuotationDecision = command('setQuotationDecision', workflow.setQuotationDecision);
 export const confirmDelivery = command('confirmDelivery', workflow.confirmDelivery);
 export const issueOrderInvoice = command('issueOrderInvoice', workflow.issueOrderInvoice);

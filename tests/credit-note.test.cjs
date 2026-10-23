@@ -26,6 +26,7 @@ function acceptedOrder(t) {
   const q = workflow.saveQuotation(order.id, { reference: 'QT-1', currency: 'MYR', payment_terms: '30 days', delivery_terms: '', valid_until: '',
     items: [{ name: 'Kuih box', code: '', quantity: 100, unit_price: 5, discount: 0 }] }, ...actor);
   workflow.setQuotationDecision(q.id, 'accepted', 'Accepted by WhatsApp', null, ...actor);
+  assert.equal(customers.approvePurchaseOrder(order.id,...actor).success,true);
   return { backend, orderId: order.id };
 }
 const mismatch = id => workflow.deriveOrderBlockers(id).find(b => b.kind === 'quantity_mismatch');

@@ -28,7 +28,7 @@ const mismatch = computed(() => details.items.length > 0 && total.value !== null
 const serialized = () => JSON.stringify({ reference: reference.value, details });
 const dirty = computed(() => serialized() !== baseline.value);
 watch(dirty, value => emit('dirty', value), { immediate: true });
-watch(() => [props.order?.id, props.savedRevision], () => {
+watch(() => [props.order?.id, props.savedRevision, props.order?.details], () => {
   documentRevision += 1;
   uploading.value = false;
   for (const key of Object.keys(details)) delete (details as unknown as Record<string, unknown>)[key];
@@ -176,10 +176,12 @@ function money(value: number | null) { return value === null || !Number.isFinite
         </div>
         <div class="grid gap-3 sm:grid-cols-3">
           <label class="text-sm font-medium">Currency<input v-model.trim="details.currency" class="form-input uppercase" maxlength="3" placeholder="Confirm, e.g. MYR or USD" @input="details.currency = details.currency.toUpperCase()" /></label>
-          <label class="text-sm font-medium">Printed order total<input v-model.number="details.document_total" type="number" min="0" step="0.01" class="form-input" /></label>
+          <label class="text-sm font-medium">Total printed on buyer’s document (optional)<input v-model.number="details.document_total" type="number" min="0" step="0.01" class="form-input" /></label>
           <p class="self-end py-2 text-sm">Calculated total <strong class="block text-lg tabular-nums">{{ details.currency || 'Currency unconfirmed' }} {{ money(total) }}</strong></p>
         </div>
-        <p v-if="mismatch" role="alert" class="text-sm text-amber-800">The line items and printed total differ. You can save the draft, but must resolve this before approval.</p>
+        <p class="text-xs text-slate-600">This is the total shown on an actual buyer PO, not an item count or the quotation total. For a direct order with no PO, leave it blank.</p>
+        <button v-if="details.document_total !== null && !locked" type="button" class="outline-btn" @click="details.document_total=null">No document total — clear this field</button>
+        <p v-if="mismatch" role="alert" class="text-sm text-amber-800">The line items and printed total differ. Save the draft, then correct the difference or record a seller override reason and confirm approval.</p>
       </section>
       <label v-if="!locked" class="flex items-start gap-2 text-sm"><input v-model="reviewed" type="checkbox" required class="mt-1" /><span>I reviewed the item details and any uploaded original; unpriced items will be priced at quotation.</span></label>
       <p class="text-xs text-slate-600">The document's status and approval names are source information. They do not approve this order in NudgeWise.</p>

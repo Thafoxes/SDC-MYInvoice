@@ -88,7 +88,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
       return customerOrders[name](...args);
     }])),
     ...Object.fromEntries(['approveFollowUp', 'rejectFollowUp', 'editFollowUpMessage', 'resolveVerificationHold', 'resolveDispute', 'confirmPromise', 'reviewCustomerPromise', 'simulateCustomerResponse', 'recordPayment', 'setCustomerLanguage'].map(key => [key, actions[key]])),
-    ...Object.fromEntries(['attachOrderEvidence','saveQuotation','setQuotationDecision','confirmDelivery',
+    ...Object.fromEntries(['attachOrderEvidence','saveQuotation','copyQuotationToOrder','setQuotationDecision','confirmDelivery',
       'issueOrderInvoice','createPaymentClaim','reviewPaymentClaim','setOrderCase','resolveOrderCase','issueCreditNote','acceptDeliveryShortfall','issueDebitNote'].map(name => [name, (...args) => {
         if (args[args.length - 1] !== businessId) throw Error('Business mismatch');
         if (name === 'attachOrderEvidence') {

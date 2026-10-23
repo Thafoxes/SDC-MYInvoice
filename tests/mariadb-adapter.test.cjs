@@ -74,6 +74,7 @@ test('Projected order-payment data satisfies MariaDB schema column and FK requir
   orders.approvePurchaseOrder(order.id,...actor);
   const q=workflow.saveQuotation(order.id,{reference:'QT-DEMO-001',currency:'MYR',payment_terms:'Net 30',delivery_terms:'Delivery required',valid_until:'2026-12-20',items:[{name:'Box A',code:'',quantity:50,unit_price:10,discount:0}]},...actor);
   workflow.setQuotationDecision(q.id,'accepted','Buyer approval recorded by seller',null,...actor);
+  assert.equal(orders.approvePurchaseOrder(order.id,...actor).success,true);
   const inv=workflow.issueOrderInvoice(order.id,'INV-DEMO-001','2026-10-23','2026-11-22',...actor);
   const claim=workflow.createPaymentClaim(inv.id,500,'REF-123',null,...actor);
   workflow.reviewPaymentClaim(claim.id,true,'Bank confirmed',...actor);
