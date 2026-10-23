@@ -192,7 +192,7 @@ export function resolveOrderCase(caseId:string,note:string,actor:string,role:str
  event(d,'order_blocker_resolved',current.purchase_order_id,actor,`Seller resolved blocker: ${note}`);
  });return{success:true};
 }
-export interface OrderBlocker { reason:string; critical:boolean; source:string; kind?:'quantity_mismatch'; item_name?:string; shortfall?:number }
+export interface OrderBlocker { reason:string; critical:boolean; source:string; kind?:'quantity_mismatch'; item_name?:string; shortfall?:number; evidence_id?:string|null }
 export function deriveOrderBlockers(poId:string):OrderBlocker[]{
  const d=getStore();const po=d.purchaseOrders.find(x=>x.id===poId);if(!po)return[];
  const q=d.quotations.find(x=>x.purchase_order_id===poId);
@@ -202,7 +202,7 @@ export function deriveOrderBlockers(poId:string):OrderBlocker[]{
    const credited=creditedQuantity(poId,item.name);
    if(delivery&&!delivery.shortfall_accepted_at&&delivery.accepted_quantity+credited<item.quantity!)out.push({
      reason:`${item.name}: ordered ${item.quantity}, accepted ${delivery.accepted_quantity}${credited?`, credited ${credited}`:''}`,critical:true,source:'Delivery confirmation vs PO',
-     kind:'quantity_mismatch',item_name:item.name,shortfall:item.quantity!-delivery.accepted_quantity-credited});
+     kind:'quantity_mismatch',item_name:item.name,shortfall:item.quantity!-delivery.accepted_quantity-credited,evidence_id:delivery.evidence_id});
  }
  for(const issue of d.orderCases.filter(x=>x.purchase_order_id===poId&&x.status==='open'))out.push({reason:issue.reason,critical:true,source:`Seller-recorded ${issue.kind}`});
  if(!q)out.push({reason:'Quotation not prepared',critical:false,source:'Quotation'});

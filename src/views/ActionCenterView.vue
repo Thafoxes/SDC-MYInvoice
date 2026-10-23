@@ -95,7 +95,7 @@ watch([()=>route.fullPath,data],async()=>{
   <article v-for="b in blocked" :key="b.order.id" class="card flex flex-col gap-3 border-l-4 border-l-rose-500 p-4 sm:flex-row sm:items-center sm:justify-between">
    <div class="min-w-0 space-y-1.5"><p class="text-sm font-semibold">{{custMap.get(b.order.customer_id)?.name||'Customer'}} · {{b.order.reference}}</p>
     <div v-for="(x,i) in b.blockers" :key="i" class="text-sm"><p class="flex items-start gap-1.5 text-rose-800"><AlertTriangle class="mt-0.5 h-4 w-4 shrink-0" />{{x.reason}}</p>
-     <p class="pl-5 text-xs text-orbyte-muted"><span class="font-medium text-slate-700">Owner: {{x.owner}}</span> · Next: {{x.action}}</p></div></div>
+     <p class="pl-5 text-xs text-orbyte-muted"><span class="font-medium text-slate-700">Owner: {{x.owner}}</span> · Next: {{x.action}}<template v-if="x.evidence_id"> · <a :href="`/api/po-evidence/${x.evidence_id}`" target="_blank" rel="noopener" class="text-blue-700 underline">View evidence</a></template></p></div></div>
    <button type="button" class="primary-btn shrink-0 self-start sm:self-center" @click="router.push(`/orders/${encodeURIComponent(b.order.id)}/view`)">Open order</button>
   </article>
  </section>

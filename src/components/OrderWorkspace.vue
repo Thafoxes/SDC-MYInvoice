@@ -9,7 +9,10 @@ import { downloadDocumentPdf } from '@/lib/documentPdf';
 import { saveQuotation,setQuotationDecision,confirmDelivery,issueOrderInvoice,createPaymentClaim,reviewPaymentClaim,
  setOrderCase,resolveOrderCase,uploadOrderEvidence,attachOrderEvidence,issueCreditNote,acceptDeliveryShortfall } from '@/services/commands';
 import type { OrderEvidence } from '@/lib/orderWorkflow';
-import { Check, AlertTriangle, Minus } from 'lucide-vue-next';
+import { Check, AlertTriangle, Minus, FileText } from 'lucide-vue-next';
+import BlockerRequest from '@/components/BlockerRequest.vue';
+import type { RequestFacts, RequestKind } from '@/presentation/blockerRequest';
+import { customerLang } from '@/lib/reminderTemplates';
 import { orderStages, nextStage, STATE_LABEL } from '@/presentation/orderStages';
 import type { StageKey, StageState } from '@/presentation/orderStages';
 const props=defineProps<{order:PurchaseOrder}>();
@@ -88,6 +91,17 @@ async function upload(event:Event){const input=event.target as HTMLInputElement;
   refreshStore();notice.value='Original evidence saved. Its content does not automatically establish agreement or settlement.';
  }catch(e){error.value=e instanceof Error?e.message:'Upload failed';}finally{uploading.value=false;input.value='';}
 }
+const sellerName=computed(()=>{const b=data.value.businesses.find(x=>x.id===DEMO_BUSINESS_ID);return b?.display_name||b?.name||'Seller';});
+const buyerLang=computed(()=>customerLang(customer.value));
+function facts(kind:RequestKind,extra:Partial<RequestFacts>={}):RequestFacts{
+ return {kind,buyerName:customer.value?.name||'there',orderRef:props.order.reference,sellerName:sellerName.value,
+  invoiceNumber:invoice.value?.invoice_number,quotationRef:quote.value?.reference,...extra};}
+function mismatchFacts(item:string):RequestFacts{const line=props.order.details?.items.find(i=>i.name===item);const d=delivery.value.find(x=>x.item_name===item);
+ return facts('quantity_mismatch',{itemName:item,ordered:line?.quantity??0,accepted:d?.accepted_quantity??0});}
+function requestKind(b:{source:string;kind?:string}):RequestKind|null{
+ if(b.kind==='quantity_mismatch')return null;if(b.source==='Payment claim')return 'payment_claim';
+ if(b.source==='Buyer decision')return 'quotation';if(b.source==='Invoice review'||b.source.startsWith('Seller-recorded'))return 'issue';return null;}
+const needsBuyerPo=computed(()=>quote.value?.status==='accepted'&&!buyerPos.value.length&&!invoice.value);
 const mismatches=computed(()=>blockers.value.filter(b=>b.kind==='quantity_mismatch'&&b.item_name));
 type Resolution={mode:''|'deliver'|'credit'|'keep';qty:number|null;reason:string};
 const resolution=reactive<Record<string,Resolution>>({});
@@ -154,6 +168,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
   <div id="stage-evidence" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border border-slate-200 p-4 space-y-3"><h4 class="font-semibold">Buyer's PO and supporting evidence</h4>
    <p v-if="buyerPos.length" class="rounded bg-emerald-50 p-2 text-sm text-emerald-900">Buyer's PO on file: {{buyerPos.map(e=>e.filename).join(', ')}}</p>
    <p v-else class="rounded bg-blue-50 p-2 text-sm text-blue-900">No buyer's PO yet. Choose <strong>Original buyer PO</strong> below and upload it. Skip this if the buyer does not use POs.</p>
+   <BlockerRequest v-if="needsBuyerPo" :facts="facts('missing_po')" :phone="customer?.phone" :lang="buyerLang" />
    <p class="text-xs text-slate-600">Optional original screenshots and documents remain available; uploads are never automatic approval or payment proof.</p>
    <div class="flex flex-wrap gap-2 items-center"><select v-model="evidenceKind" class="form-input !mt-0 w-full sm:w-auto" aria-label="Evidence type">
      <option value="chat_screenshot">Order conversation</option><option value="existing_po">Original buyer PO</option>
@@ -197,6 +212,11 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
        :class="res(b.item_name!).mode===opt.m?'border-blue-500 ring-1 ring-blue-500':'border-slate-200'" @click="choose(b.item_name!,opt.m as Resolution['mode'],b.shortfall!)">
        <strong class="block text-slate-900">{{opt.t}}</strong><span class="text-xs text-slate-600">{{opt.d}}</span></button>
      </div>
+     <div class="flex flex-wrap items-center gap-3">
+      <a v-if="b.evidence_id" :href="`/api/po-evidence/${b.evidence_id}`" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm text-blue-700 underline"><FileText class="h-4 w-4" />View delivery proof</a>
+      <span v-else class="text-xs text-rose-800">No delivery proof attached. Upload the signed DO under Buyer's PO and supporting evidence.</span>
+      <BlockerRequest :facts="mismatchFacts(b.item_name!)" :phone="customer?.phone" :lang="buyerLang" />
+     </div>
      <div v-if="res(b.item_name!).mode==='deliver'" class="flex flex-wrap items-center gap-2 text-sm"><span>After delivering the last {{b.shortfall}}, confirm the new accepted quantity.</span>
       <button type="button" class="outline-btn" @click="deliverRest(b.item_name!,b.shortfall!)">Fill in {{(delivery.find(x=>x.item_name===b.item_name)?.accepted_quantity||0)+b.shortfall!}} accepted</button></div>
      <div v-if="res(b.item_name!).mode==='credit'" class="grid gap-2 sm:grid-cols-[8rem_1fr_auto] sm:items-end">
@@ -232,7 +252,8 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
     <div v-for="receipt in receipts" :key="receipt.id" class="flex gap-2 items-center text-xs"><span>{{receipt.receipt_number}} · {{asMoney(receipt.amount)}}</span><button class="outline-btn" @click="download('receipt',receipt.id)">Download receipt PDF</button></div>
   </div>
   <div class="rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Payment blockers &amp; seller review</h4>
-   <p v-for="(b,i) in blockers" :key="i" class="rounded p-2 text-sm" :class="b.critical?'bg-amber-50 text-amber-900':'bg-slate-50'">{{b.critical?'⚠ ':''}}{{b.reason}} <span class="text-xs">({{b.source}})</span></p>
+   <div v-for="(b,i) in blockers" :key="i" class="space-y-2 rounded p-2 text-sm" :class="b.critical?'bg-amber-50 text-amber-900':'bg-slate-50'"><p>{{b.critical?'⚠ ':''}}{{b.reason}} <span class="text-xs">({{b.source}})</span></p>
+    <BlockerRequest v-if="requestKind(b)" :facts="facts(requestKind(b)!)" :phone="customer?.phone" :lang="buyerLang" /></div>
    <p v-if="!blockers.length" class="text-sm text-emerald-700">No known blockers in the currently recorded evidence.</p>
    <div class="grid sm:grid-cols-2 gap-2"><select v-model="caseForm.kind" class="form-input !mt-0"><option value="dispute">Dispute</option><option value="missing_document">Missing document</option><option value="other">Other blocker</option></select>
     <input v-model="caseForm.reason" class="form-input !mt-0" placeholder="Describe issue or mismatch" /></div><button class="outline-btn" :disabled="busy" @click="addCase">Open review blocker</button>
