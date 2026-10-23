@@ -45,41 +45,57 @@ function fileExtension(bytes) {
   throw new Error('Only PDF, PNG and JPEG documents are supported');
 }
 
-async function chat(messages) {
-  const mode = (process.env.AI_PROVIDER || 'auto').toLowerCase();
-  const model = process.env.OLLAMA_MODEL || 'llama3.2:3b';
-  const cloudModel = process.env.CLOUD_AI_MODEL || model;
-  const timeout = Math.min(Math.max(Number(process.env.AI_TIMEOUT_MS) || 30000, 1000), 120000);
-  const localBase = (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, '');
-  const cloudBase = (process.env.CLOUD_AI_BASE_URL || 'https://ollama.com').replace(/\/$/, '');
+/** Which AI the backend uses. Default is the Ollama cloud API with Gemma (the Replit demo setup).
+ * AI_PROVIDER=auto tries a local Ollama first, AI_PROVIDER=ollama uses only local, AI_PROVIDER=off disables AI. */
+function aiSettings() {
+  const mode = (process.env.AI_PROVIDER || 'cloud').toLowerCase();
   const cloudKey = process.env.CLOUD_AI_API_KEY?.trim() || process.env.OLLAMA_API_KEY?.trim();
-  if (!['off', 'ollama', 'cloud', 'auto'].includes(mode)) throw new Error('Invalid AI_PROVIDER; use off, ollama, cloud or auto');
-  if (mode === 'off') throw new Error('AI is disabled (AI_PROVIDER=off)');
-  async function request(base, key, name, selectedModel = model) {
+  return {
+    mode, cloudKey,
+    localModel: process.env.OLLAMA_MODEL || 'llama3.2:3b',
+    cloudModel: process.env.CLOUD_AI_MODEL || process.env.OLLAMA_MODEL || 'gemma4:31b',
+    localBase: (process.env.OLLAMA_BASE_URL || 'http://localhost:11434').replace(/\/$/, ''),
+    cloudBase: (process.env.CLOUD_AI_BASE_URL || 'https://ollama.com').replace(/\/$/, ''),
+    timeout: Math.min(Math.max(Number(process.env.AI_TIMEOUT_MS) || (mode === 'cloud' ? 120000 : 30000), 1000), 120000),
+  };
+}
+/** The model actually used in the current mode, for status display. */
+function activeModel() {
+  const s = aiSettings();
+  return s.mode === 'ollama' ? s.localModel : s.mode === 'auto' ? `${s.localModel} (local) / ${s.cloudModel} (cloud)` : s.mode === 'off' ? 'AI off' : s.cloudModel;
+}
+
+async function chat(messages) {
+  const s = aiSettings();
+  if (!['off', 'ollama', 'cloud', 'auto'].includes(s.mode)) throw new Error('Invalid AI_PROVIDER; use off, ollama, cloud or auto');
+  if (s.mode === 'off') throw new Error('AI is disabled (AI_PROVIDER=off)');
+  async function call(base, key, model) {
     let response;
     try {
       response = await fetch(`${base}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) },
-        body: JSON.stringify({ model: selectedModel, messages, stream: false }),
-        redirect: 'error', signal: AbortSignal.timeout(timeout),
+        body: JSON.stringify({ model, messages, stream: false }),
+        redirect: 'error', signal: AbortSignal.timeout(s.timeout),
       });
-    } catch { throw new Error(`${name} connection failed or timed out`); }
-    if (!response.ok) throw new Error(`${name} API failed (HTTP ${response.status})`);
+    } catch { throw new Error(key ? 'Ollama API is unavailable or timed out' : 'Local Ollama connection failed or timed out'); }
+    if (key && (response.status === 401 || response.status === 403)) throw new Error('Ollama API access denied; check OLLAMA_API_KEY and model access');
+    if (!response.ok) throw new Error(`${key ? 'Ollama API' : 'Local Ollama'} request failed (HTTP ${response.status})`);
     let result;
-    try { result = await response.json(); } catch { throw new Error(`${name} returned invalid JSON`); }
-    if (typeof result?.message?.content !== 'string' || result.message.content.length > 30000) throw new Error(`${name} returned an invalid response`);
+    try { result = await response.json(); } catch { throw new Error('Invalid Ollama API response'); }
+    if (typeof result?.message?.content !== 'string' || result.message.content.length > 30000) throw new Error('Invalid Ollama API response');
     return result.message.content;
   }
-  if (mode === 'ollama') return request(localBase, undefined, 'Local Ollama');
-  if (mode === 'cloud') {
-    if (!cloudKey) throw new Error('Set CLOUD_AI_API_KEY or OLLAMA_API_KEY for cloud mode');
-    return request(cloudBase, cloudKey, 'Cloud Ollama', cloudModel);
-  }
-  try { return await request(localBase, undefined, 'Local Ollama'); }
+  const cloud = () => {
+    if (!s.cloudKey) throw new Error('Set OLLAMA_API_KEY (or CLOUD_AI_API_KEY) in .env and restart the backend');
+    return call(s.cloudBase, s.cloudKey, s.cloudModel);
+  };
+  if (s.mode === 'cloud') return cloud();
+  if (s.mode === 'ollama') return call(s.localBase, undefined, s.localModel);
+  try { return await call(s.localBase, undefined, s.localModel); }
   catch (localError) {
-    if (!cloudKey) throw new Error(`${localError.message}; cloud fallback has no API key`);
-    return request(cloudBase, cloudKey, 'Cloud Ollama', cloudModel);
+    if (!s.cloudKey) throw new Error(`${localError.message}; cloud fallback has no API key`);
+    return cloud();
   }
 }
 
@@ -195,3 +211,4 @@ async function extractOrderChat(filePath) {
 }
 module.exports.extractOrderChat = extractOrderChat;
 module.exports.readDocument = readDocument;
+module.exports.activeModel = activeModel;

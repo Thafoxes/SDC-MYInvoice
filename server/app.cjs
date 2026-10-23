@@ -279,7 +279,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
       if (req.method === 'GET' && req.url === '/api/state') {
         const data = snapshot();
         await flush();
-        return json(200, { data, integration: { model: process.env.OLLAMA_MODEL || 'llama3.2:3b', aiMode: process.env.AI_PROVIDER || 'auto', botConfigured: !!process.env.TELEGRAM_BOT_TOKEN, pollingError, lastPollAt, receivingAccountName: process.env.RECEIPT_BENEFICIARY || '', dbClient: database ? 'mariadb' : 'sqlite' } });
+        return json(200, { data, integration: { model: require('./integrations.cjs').activeModel(), aiMode: process.env.AI_PROVIDER || 'cloud', botConfigured: !!process.env.TELEGRAM_BOT_TOKEN, pollingError, lastPollAt, receivingAccountName: process.env.RECEIPT_BENEFICIARY || '', dbClient: database ? 'mariadb' : 'sqlite' } });
       }
       const evidenceId = /^\/api\/po-evidence\/([a-f0-9-]{36})$/.exec(req.url || '')?.[1];
       if (req.method === 'GET' && evidenceId) {

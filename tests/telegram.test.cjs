@@ -45,21 +45,28 @@ async function send(backend) {
   assert.equal((await backend.sendApproved('fu-001', 'Siti Aishah')).success, true);
 }
 
-test('real delivery stores mapping and exact receipt settles ledger once', async t => {
+// A receipt screenshot is evidence of a claim, never a verified payment: the seller must check the bank first.
+test('real delivery stores mapping and an exact receipt waits for seller verification, once', async t => {
   const backend = fixture(t); await send(backend);
   assert.equal(backend.snapshot().followUpActions[0].delivery_status, 'telegram_delivered');
+  const paymentsBefore = backend.snapshot().payments.length;
   await backend.receive(update(1, 123456, 900));
   await backend.receive(update(1, 123456, 900));
   const data = backend.snapshot();
-  assert.equal(data.receipts[0].status, 'recorded');
-  assert.equal(data.invoices.find(i => i.id === 'inv-1006').status, 'paid');
-  assert.equal(data.payments.filter(p => p.reference === 'TEST-TRANSFER-1').length, 1);
-  assert.equal(data.invoices.find(i => i.id === 'inv-1006').verification_hold, false);
+  assert.equal(data.receipts.length, 1);
+  assert.equal(data.receipts[0].status, 'attention');
+  assert.match(data.receipts[0].reason, /funds have not been verified/);
+  assert.equal(data.receipts[0].invoice_id, 'inv-1006');
+  assert.notEqual(data.invoices.find(i => i.id === 'inv-1006').status, 'paid');
+  assert.equal(data.payments.length, paymentsBefore);
+  assert.equal(data.invoices.find(i => i.id === 'inv-1006').verification_hold, true);
 });
 
-test('latest successful message fallback settles without explicit reply', async t => {
+test('latest successful message fallback matches the invoice without an explicit reply', async t => {
   const backend = fixture(t); await send(backend); await backend.receive(update());
-  assert.equal(backend.snapshot().receipts[0].status, 'recorded');
+  const receipt = backend.snapshot().receipts[0];
+  assert.equal(receipt.invoice_id, 'inv-1006');
+  assert.equal(receipt.status, 'attention');
 });
 
 test('unknown chat and missing sent invoice remain visible without touching ledger', async t => {
@@ -97,17 +104,20 @@ test('OCR/model failure becomes an attention record', async t => {
   assert.equal(backend.snapshot().receipts[0].reason, 'OCR unavailable');
 });
 
-test('duplicate transaction and already-paid invoice cannot double-post', async t => {
+test('duplicate receipts never post a payment on their own', async t => {
   const backend = fixture(t); await send(backend);
   await backend.receive(update(1)); await backend.receive(update(2));
-  assert.equal(backend.snapshot().payments.filter(p => p.reference === 'TEST-TRANSFER-1').length, 1);
-  assert.equal(backend.snapshot().receipts.find(r => r.id === 'tg-2').status, 'attention');
+  const data = backend.snapshot();
+  assert.equal(data.payments.filter(p => p.reference === 'TEST-TRANSFER-1').length, 0);
+  assert.ok(data.receipts.every(r => r.status === 'attention'));
 });
 
-test('concurrent receipts cannot post the same settlement twice', async t => {
+test('concurrent receipts cannot post a settlement', async t => {
   const backend = fixture(t); await send(backend);
   await Promise.all([backend.receive(update(1)), backend.receive(update(2))]);
-  assert.equal(backend.snapshot().payments.filter(p => p.reference === 'TEST-TRANSFER-1').length, 1);
+  const data = backend.snapshot();
+  assert.equal(data.payments.filter(p => p.reference === 'TEST-TRANSFER-1').length, 0);
+  assert.ok(!data.receipts.some(r => r.status === 'recorded'));
 });
 
 test('transaction rollback restores both cached state and SQLite', t => {
@@ -268,8 +278,8 @@ test('caption classification and receipt processing both run', async t => {
   await backend.receive(message);
   const data = backend.snapshot();
   assert.equal(data.customerResponses.find(r => r.id === 'tg-reply-15').ai_state, 'complete');
-  assert.equal(data.receipts.find(r => r.id === 'tg-15').status, 'recorded');
-  assert.equal(data.invoices.find(i => i.id === 'inv-1006').verification_hold, false);
+  assert.equal(data.receipts.find(r => r.id === 'tg-15').status, 'attention');
+  assert.equal(data.invoices.find(i => i.id === 'inv-1006').verification_hold, true);
 });
 
 test('attention includes non-overdue verification, suppresses missed blame under holds, and sorts all items', t => {
