@@ -107,6 +107,14 @@ A buyer does not need to issue a PO. Choose **Create order**, select the custome
 
 ## Downloading order, quotation and invoice PDFs
 
-The document download buttons include supplier and buyer names, addresses, phone numbers and emails. Buyer contacts use the saved customer record, with order/PO fields as a fallback; supplier contacts use the order/PO fields. Missing values print as `-`. The business record currently stores the supplier name but has no separate address/phone settings.
+The document download buttons include supplier and buyer names, addresses, phone numbers and emails. Buyer contacts use the saved customer record, with order/PO fields as a fallback; supplier contacts use saved Settings first, with order/PO fields as a fallback. Missing values print as `-`. Use **Settings** to save the seller name, address, phone and email.
 
 Items print in a bordered table: item/code, quantity, unit price, line discount and line total. Unknown prices print as `-`; long tables repeat their headers on subsequent pages. Invoice items use the quotation when available. These demo PDFs use built-in ASCII fonts; multilingual documents require a Unicode-capable renderer.
+
+## Seller settings and document preparer
+
+Open **Settings** in the sidebar. Fill in the supplier/seller name, address, phone, optional email, and **Salesperson / prepared by**, then click **Save settings**. The seller name is required; other contact fields can be left blank. PDF contact sections prefer these saved settings over uploaded PO supplier fields, and use `-` when neither source has a value.
+
+The salesperson setting is a document name, not a login or permission change. Leaving it blank uses the seller account name. New quotations keep the name recorded when created, including subsequent revisions. New invoices record the name set when issued. Later settings changes do not replace those recorded preparers. Older documents with no recorded preparer print `-`.
+
+Settings use the current workspace's persistence: browser localStorage in browser-only mode, or the backend database when enabled. Seller contacts project to the existing MariaDB business columns; salesperson and per-document preparer names are retained in the runtime snapshot without requiring new schema columns. Resetting the demo resets settings as well as transactions.

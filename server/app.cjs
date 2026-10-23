@@ -3,6 +3,7 @@ const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const customerOrders = require('../.server-build/lib/customerOrders.js');
 const workflow = require('../.server-build/lib/orderWorkflow.js');
+const businessSettings = require('../.server-build/lib/businessSettings.js');
 const { DatabaseSync } = require('node:sqlite');
 const { createServer } = require('node:http');
 const store = require('../.server-build/lib/store.js');
@@ -78,6 +79,10 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
   monitor();
 
   const commands = {
+    saveBusinessSettings(...args) {
+      if(args[3]!==businessId)throw Error('Business mismatch');
+      return businessSettings.saveBusinessSettings(...args);
+    },
     ...Object.fromEntries(['createCustomer', 'updateCustomer', 'deleteCustomer', 'deletePurchaseOrder', 'createPurchaseOrder', 'updatePurchaseOrder', 'approvePurchaseOrder'].map(name => [name, (...args) => {
       const businessIndex = name === 'updatePurchaseOrder' ? 5 : name === 'createPurchaseOrder' ? 4 : name === 'updateCustomer' ? 4 : 3;
       if (args[businessIndex] !== businessId) return { success: false, error: 'Business does not match this workspace' };

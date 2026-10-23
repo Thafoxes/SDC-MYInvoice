@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { RouterLink } from 'vue-router';
-import { LayoutDashboard, Zap, Sparkles, Menu, X, FileText, Users, ClipboardList } from 'lucide-vue-next';
+import { LayoutDashboard, Zap, Sparkles, Menu, X, FileText, Users, ClipboardList, Settings } from 'lucide-vue-next';
 import { computed } from 'vue';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { DEMO_BUSINESS_ID, DEMO_SELLER_ID } from '@/lib/store';
@@ -16,6 +16,7 @@ const links = [
   { to: '/orders', label: 'Orders', icon: ClipboardList },
   { to: '/action-center', label: 'Action Center', icon: Zap },
   { to: '/ai-assistant', label: 'AI Assistant', icon: Sparkles },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 </script>
 <template>

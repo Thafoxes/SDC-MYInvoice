@@ -132,7 +132,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
  const po=props.order;const lines=((kind==='quote'||kind==='invoice')?quote.value?.items||po.details?.items:po.details?.items)||[];
  const title=kind==='po'?'ORDER SUMMARY FOR BUYER REVIEW':kind==='quote'?'QUOTATION':kind==='invoice'?'INVOICE TRACKING COPY':'PAYMENT RECEIPT';
  const reference=kind==='po'?po.reference:kind==='quote'?quote.value?.reference:kind==='invoice'?invoice.value?.invoice_number:receipts.value.find(r=>r.id===receiptId)?.receipt_number;
- const sections=[{heading:'Document information',lines:[`Reference: ${reference||'-'}`,`Status: ${kind==='quote'?quote.value?.status:kind==='po'?po.status:'Seller recorded'}`]},
+ const sections=[{heading:'Document information',lines:[`Reference: ${reference||'-'}`,`Prepared by: ${(kind==='quote'?quote.value?.prepared_by:kind==='invoice'?invoice.value?.prepared_by:data.value.businesses.find(b=>b.id===DEMO_BUSINESS_ID)?.salesperson_name)||'-'}`,`Status: ${kind==='quote'?quote.value?.status:kind==='po'?po.status:'Seller recorded'}`]},
   ...documentContactSections(data.value.businesses.find(b=>b.id===DEMO_BUSINESS_ID),customer.value,po.details)];
  if(kind==='receipt'){
   const rec=receipts.value.find(r=>r.id===receiptId);sections.push({heading:'Seller-verified settlement',lines:[

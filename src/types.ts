@@ -9,6 +9,10 @@ export interface Business {
   id: string;
   name: string;
   display_name: string | null;
+  address?: string;
+  phone?: string;
+  email?: string;
+  salesperson_name?: string;
   currency: string;
   timezone: string;
 }
@@ -41,6 +45,7 @@ export interface Invoice {
   invoice_number: string;
   purchase_order_id?: string;
   quotation_id?: string;
+  prepared_by?: string;
   invoice_amount: number;
   issue_date: string;
   due_date: string;

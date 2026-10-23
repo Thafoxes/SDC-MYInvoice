@@ -95,6 +95,7 @@ Set `VITE_BACKEND_ENABLED=false`, restart Vite and run `npm run dev` without the
 
 ```powershell
 npm run test:server
+npm run test:settings
 npm run test:customers
 npm run test:po
 npm run test:workflow

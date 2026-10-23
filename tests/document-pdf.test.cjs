@@ -39,3 +39,10 @@ test('unpriced items use dashes instead of inventing zero values',()=>{
  assert.ok(text.includes('(-) Tj'));
  assert.equal(text.includes('(0.00) Tj'),false);
 });
+
+test('saved seller contacts take precedence over uploaded PO supplier fields',()=>{
+ const sections=documentContactSections({...business,address:'Saved seller address',phone:'Saved phone',email:'seller@example.test'},customer,details);
+ assert.ok(sections[0].lines.includes('Address: Saved seller address'));
+ assert.ok(sections[0].lines.includes('Phone: Saved phone'));
+ assert.ok(sections[0].lines.includes('Email: seller@example.test'));
+});

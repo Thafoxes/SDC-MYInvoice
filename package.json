@@ -20,7 +20,8 @@
     "test:mariadb": "npm run server:build && node --test tests/mariadb-adapter.test.cjs",
     "db:check": "node --env-file-if-exists=.env server/mariadb-check.cjs",
     "test:server": "npm run server:build && node --test tests/backend.test.cjs tests/ollama.test.cjs tests/rewrite.test.cjs",
-    "test:pdf": "tsc -p tsconfig.logic-tests.json && node tests/setup-test-build.cjs && node --test tests/document-pdf.test.cjs"
+    "test:pdf": "tsc -p tsconfig.logic-tests.json && node tests/setup-test-build.cjs && node --test tests/document-pdf.test.cjs",
+    "test:settings": "npm run server:build && node --test tests/business-settings.test.cjs"
   },
   "dependencies": {
     "vue": "^3.5.13",

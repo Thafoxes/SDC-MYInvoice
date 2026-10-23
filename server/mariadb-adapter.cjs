@@ -39,7 +39,7 @@ function projectState(state, evidenceRows = []) {
   const poItems = new Map();
   const validUser = id => state.users.some(u => u.id === id);
 
-  for (const b of state.businesses) add('businesses', {id:b.id,name:b.name,display_name:b.display_name,currency:b.currency||'MYR',timezone:b.timezone||'Asia/Kuala_Lumpur'});
+  for (const b of state.businesses) add('businesses', {id:b.id,name:b.name,display_name:b.display_name,address:b.address||null,phone:b.phone||null,email:b.email||null,currency:b.currency||'MYR',timezone:b.timezone||'Asia/Kuala_Lumpur'});
   for (const u of state.users) add('users', {id:u.id,business_id:u.business_id,name:u.name,email:u.email||`${u.id}@nudgewise.invalid`,role:u.role});
   for (const c of state.customers) add('customers', {id:c.id,business_id:c.business_id,name:c.name,phone:c.phone||null,email:c.email||null,billing_email:c.email||null,address:c.address||null,preferred_language:c.preferred_language||'en'});
 

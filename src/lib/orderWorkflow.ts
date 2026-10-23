@@ -5,7 +5,7 @@ import type { PurchaseOrderItem, PurchaseOrder } from '@/types';
 import { purchaseOrderTotal, validatePurchaseOrderDetails } from './purchaseOrder';
 
 export interface Quotation {
- id: string; business_id: string; purchase_order_id: string; reference: string;
+ id: string; business_id: string; purchase_order_id: string; reference: string; prepared_by?: string;
  items: PurchaseOrderItem[]; amount: number; currency: string; payment_terms: string;
  delivery_terms: string; valid_until: string; status: 'draft'|'sent'|'accepted'|'revision_requested'|'rejected';
  buyer_decision_note: string; buyer_decision_evidence_id: string | null; created_at: string; updated_at: string;
@@ -85,6 +85,7 @@ export function saveQuotation(poId: string, input: Pick<Quotation,'reference'|'i
  const previousQuotation = old ? structuredClone(old) : null;
  const qid = old?.id || id();
  update(d => { const q: Quotation = { id: qid, purchase_order_id: poId, business_id: businessId, reference: input.reference.trim(),
+    prepared_by:old?.prepared_by||getStore().businesses.find(b=>b.id===businessId)?.salesperson_name||actor,
     currency: input.currency, items: lines, amount: total, payment_terms: input.payment_terms.trim(), delivery_terms: input.delivery_terms.trim(),
     valid_until: input.valid_until, status: 'draft', buyer_decision_note: '', buyer_decision_evidence_id: null, created_at: old?.created_at || now(), updated_at: now() };
    if (old) Object.assign(d.quotations.find(x=>x.id===qid)!,q); else d.quotations.push(q);
@@ -157,7 +158,7 @@ export function issueOrderInvoice(poId: string, reference: string, issueDate: st
  const blockers=deriveOrderBlockers(poId);
  if(blockers.some(x=>x.critical))throw Error(`Resolve blocker before invoicing: ${blockers.find(x=>x.critical)!.reason}`);
  const invoiceId=id();
- update(d=>{d.invoices.unshift({id:invoiceId,business_id:businessId,customer_id:po.customer_id,purchase_order_id:poId,quotation_id:q.id,
+ update(d=>{d.invoices.unshift({id:invoiceId,business_id:businessId,customer_id:po.customer_id,purchase_order_id:poId,quotation_id:q.id,prepared_by:getStore().businesses.find(b=>b.id===businessId)?.salesperson_name||actor,
    invoice_number:reference.trim(),invoice_amount:q.amount,issue_date:issueDate,due_date:dueDate,status:'pending',labels:[],
    dispute_active:false,verification_hold:false,promise_to_pay_date:null,promise_confirmed:false,created_at:now()});
    event(d,'invoice_issued',poId,actor,`Invoice ${reference} created from accepted quotation; seller must verify legal document requirements`);
