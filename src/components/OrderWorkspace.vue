@@ -7,7 +7,7 @@ import { deriveOrderBlockers } from '@/lib/orderWorkflow';
 import { purchaseOrderTotal } from '@/lib/purchaseOrder';
 import { downloadDocumentPdf } from '@/lib/documentPdf';
 import { saveQuotation,setQuotationDecision,confirmDelivery,issueOrderInvoice,createPaymentClaim,reviewPaymentClaim,
- setOrderCase,resolveOrderCase,uploadOrderEvidence,attachOrderEvidence,issueCreditNote,acceptDeliveryShortfall } from '@/services/commands';
+ setOrderCase,resolveOrderCase,uploadOrderEvidence,attachOrderEvidence,issueCreditNote,acceptDeliveryShortfall,issueDebitNote } from '@/services/commands';
 import type { OrderEvidence } from '@/lib/orderWorkflow';
 import { Check, AlertTriangle, Minus, FileText } from 'lucide-vue-next';
 import BlockerRequest from '@/components/BlockerRequest.vue';
@@ -27,6 +27,9 @@ const receipts=computed(()=>data.value.settlementReceipts.filter(r=>r.purchase_o
 const delivery=computed(()=>data.value.deliveryConfirmations.filter(c=>c.purchase_order_id===props.order.id));
 const evidence=computed(()=>data.value.orderEvidence.filter(e=>e.purchase_order_id===props.order.id));
 const creditNotes=computed(()=>(data.value.creditNotes||[]).filter(n=>n.purchase_order_id===props.order.id));
+const debitNotes=computed(()=>(data.value.debitNotes||[]).filter(n=>n.purchase_order_id===props.order.id));
+const debitForm=reactive({open:false,description:'',amount:null as number|null,reason:''});
+function addDebit(){void run(()=>issueDebitNote(props.order.id,debitForm.description,Number(debitForm.amount),debitForm.reason,...args())).then(()=>{if(!error.value)Object.assign(debitForm,{open:false,description:'',amount:null,reason:''});});}
 const cases=computed(()=>data.value.orderCases.filter(c=>c.purchase_order_id===props.order.id));
 const blockers=computed(()=>{void data.value;return deriveOrderBlockers(props.order.id);});
 const activity=computed(()=>data.value.activityEvents.filter(e=>e.metadata?.order_id===props.order.id).slice(0,20));
@@ -237,7 +240,17 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
     <p v-else class="text-sm text-slate-600">Ready to invoice: {{asMoney(quote?.amount)}}<template v-if="pendingCredit"> − credit notes {{asMoney(pendingCredit)}} = <strong>{{asMoney((quote?.amount||0)-pendingCredit)}}</strong> owed</template>.</p>
     <div class="grid sm:grid-cols-3 gap-2"><label class="text-xs">Invoice reference<input v-model="invForm.reference" class="form-input" /></label><label class="text-xs">Issue date<input type="date" v-model="invForm.issue_date" class="form-input" /></label><label class="text-xs">Agreed due date<input type="date" v-model="invForm.due_date" class="form-input" /></label></div>
     <button class="primary-btn" :disabled="busy||!!invoiceGate" :title="invoiceGate||undefined" @click="makeInvoice">Create invoice record</button>
-   </div><div v-else class="flex items-center flex-wrap gap-3 text-sm"><strong>{{invoice.invoice_number}}</strong><span>{{asMoney(invoice.invoice_amount)}}<template v-if="invoiceView?.total_credits"> − credits {{asMoney(invoiceView.total_credits)}}</template> · {{invoiceView?.status}}</span><button class="outline-btn" @click="download('invoice')">Download invoice PDF</button></div>
+   </div><div v-else class="space-y-3"><div class="flex items-center flex-wrap gap-3 text-sm"><strong>{{invoice.invoice_number}}</strong><span>{{asMoney(invoice.invoice_amount)}}<template v-if="invoiceView?.total_debits"> + debit notes {{asMoney(invoiceView.total_debits)}}</template><template v-if="invoiceView?.total_credits"> − credit notes {{asMoney(invoiceView.total_credits)}}</template> · {{invoiceView?.status}}</span><button class="outline-btn" @click="download('invoice')">Download invoice PDF</button></div>
+    <div v-if="debitNotes.length" class="space-y-1"><p class="text-xs font-semibold text-slate-700">Debit notes</p>
+     <p v-for="n in debitNotes" :key="n.id" class="text-xs">{{n.number}} · {{n.description}} · +{{asMoney(n.amount)}} · {{n.reason}}</p></div>
+    <button v-if="!debitForm.open" type="button" class="text-sm text-blue-700 underline" @click="debitForm.open=true">+ Add agreed extra charge (debit note)</button>
+    <div v-else class="space-y-2 rounded-lg border border-slate-200 p-3" aria-label="Debit note">
+     <div class="grid gap-2 sm:grid-cols-[1fr_9rem]"><label class="text-xs">What is the charge<input v-model="debitForm.description" class="form-input" maxlength="120" placeholder="e.g. Second delivery trip" /></label>
+      <label class="text-xs">Amount<input v-model.number="debitForm.amount" type="number" min="0.01" step="0.01" class="form-input" /></label></div>
+     <label class="block text-xs">Reason and who agreed<input v-model="debitForm.reason" class="form-input" maxlength="500" placeholder="e.g. Buyer asked for a second drop-off on 24 Oct (WhatsApp)" /></label>
+     <div class="flex flex-wrap items-center gap-2"><button type="button" class="primary-btn" :disabled="busy||!debitForm.description.trim()||!debitForm.reason.trim()||!(Number(debitForm.amount)>0)" @click="addDebit">Issue debit note{{Number(debitForm.amount)>0?' · +'+asMoney(Number(debitForm.amount)):''}}</button>
+      <button type="button" class="text-xs text-slate-500 underline" @click="debitForm.open=false">Cancel</button></div>
+     <p class="text-xs text-slate-500">The original invoice stays as issued. The debit note raises what the buyer owes; reminders for the old amount are cancelled.</p></div></div>
   </div>
   <div id="stage-payment" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Payment and receipt</h4>
     <p v-if="invoice" class="text-sm">Outstanding: <strong>{{asMoney(invoiceView?.outstanding_balance)}}</strong> · Evidence alone never verifies a bank transfer.</p><p v-else class="text-sm text-slate-500">Payment tracking starts when the invoice is created.</p>

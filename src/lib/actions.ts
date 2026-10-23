@@ -3,7 +3,7 @@ import type { FollowUpAction, Invoice } from '@/types';
 import {
   getStore, computeStatus, addPayment, addActivity, addNotificationRecord,
   updateInvoice, updateFollowUp, addCustomerResponse, DEMO_BUSINESS_ID,
-  updateCustomerResponse, update, computeInvoiceWithCustomer, DEMO_BUSINESS_NAME,
+  updateCustomerResponse, update, computeInvoiceWithCustomer, DEMO_BUSINESS_NAME, debitTotal,
 } from './store';
 import { isLang, customerLang, LANGS } from './reminderTemplates';
 import { validDate, resolvePromiseDate, responseFlags, type ReplyAnalysis } from './replyAnalysis';
@@ -30,7 +30,7 @@ function balanceForInvoice(invoice: Invoice) {
   const data = getStore();
   const payments = data.payments.filter(p => p.business_id === invoice.business_id && p.invoice_id === invoice.id && p.verification_status === 'recorded');
   const credits = data.credits.filter(c => c.business_id === invoice.business_id && c.invoice_id === invoice.id);
-  return subtractMoney(subtractMoney(invoice.invoice_amount, sumMoney(payments.map(p => p.amount))), sumMoney(credits.map(c => c.amount)));
+  return subtractMoney(subtractMoney(sumMoney([invoice.invoice_amount, debitTotal(data, invoice)]), sumMoney(payments.map(p => p.amount))), sumMoney(credits.map(c => c.amount)));
 }
 function cancelAction(fu: FollowUpAction, reason: string): void {
   updateFollowUp(fu.id, {

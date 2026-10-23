@@ -48,7 +48,7 @@ function getSeedData(): StoreData {
     businesses: [{ id: 'biz-001', name: 'My business', display_name: null, currency: 'MYR', timezone: 'Asia/Kuala_Lumpur' }],
     users: [{ id: 'user-seller', business_id: 'biz-001', name: 'Seller', email: '', role: 'seller', avatar_color: '#1D72E0' }],
     customers: [], invoices: [], payments: [], credits: [], purchaseOrders: [],
-    quotations: [], orderEvidence: [], deliveryConfirmations: [], paymentClaims: [], settlementReceipts: [], orderCases: [], creditNotes: [],
+    quotations: [], orderEvidence: [], deliveryConfirmations: [], paymentClaims: [], settlementReceipts: [], orderCases: [], creditNotes: [], debitNotes: [],
     followUpActions: [], customerResponses: [], activityEvents: [], notifications: [], aiConversations: [],
     demoState: { business_id: 'biz-001', simulated_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()), last_check_at: null },
   };
@@ -60,7 +60,7 @@ let cache: StoreData | null = null;
 function migrate(data: StoreData): StoreData {
   data.purchaseOrders ??= [];
   data.quotations ??= []; data.orderEvidence ??= []; data.deliveryConfirmations ??= [];
-  data.paymentClaims ??= []; data.settlementReceipts ??= []; data.orderCases ??= []; data.creditNotes ??= [];
+  data.paymentClaims ??= []; data.settlementReceipts ??= []; data.orderCases ??= []; data.creditNotes ??= []; data.debitNotes ??= [];
   if (!data.sample_data_removed) {
     const customers = new Set(data.customers.filter(c => /^cust-(?:\d{2}|green|yellow|grey|delta)$/.test(c.id)).map(c => c.id));
     const invoices = new Set(data.invoices.filter(i => customers.has(i.customer_id) || /^(?:inv-10\d{2}|inv-delta-001|hist-(?:green|yellow)-\d+)$/.test(i.id)).map(i => i.id));
@@ -165,12 +165,17 @@ export const DEMO_SELLER_ID = 'user-seller';
 export const DEMO_BUSINESS_NAME = 'My business';
 
 // ---- Computed invoice helpers ----
+/** Agreed extra charges added to an invoice by debit notes. */
+export function debitTotal(data: { debitNotes?: { invoice_id: string; business_id: string; amount: number }[] }, inv: Pick<Invoice, 'id' | 'business_id'>): number {
+  return sumMoney((data.debitNotes ?? []).filter(n => n.invoice_id === inv.id && n.business_id === inv.business_id).map(n => n.amount));
+}
 export function computeInvoiceWithCustomer(inv: Invoice, data: StoreData, todayStr: string): InvoiceWithCustomer {
   const payments = data.payments.filter((p) => p.business_id === inv.business_id && p.invoice_id === inv.id && p.verification_status === 'recorded');
   const credits = data.credits.filter((c) => c.business_id === inv.business_id && c.invoice_id === inv.id);
   const totalPaid = sumMoney(payments.map((p) => p.amount));
   const totalCredits = sumMoney(credits.map((c) => c.amount));
-  const outstanding = Math.max(0, subtractMoney(subtractMoney(inv.invoice_amount, totalPaid), totalCredits));
+  const totalDebits = debitTotal(data, inv);
+  const outstanding = Math.max(0, subtractMoney(subtractMoney(sumMoney([inv.invoice_amount, totalDebits]), totalPaid), totalCredits));
   const dOverdue = outstanding > 0 ? daysOverdue(inv.due_date, todayStr) : 0;
   return {
     ...inv,
@@ -179,6 +184,7 @@ export function computeInvoiceWithCustomer(inv: Invoice, data: StoreData, todayS
     outstanding_balance: outstanding,
     total_paid: totalPaid,
     total_credits: totalCredits,
+    total_debits: totalDebits,
     days_overdue: dOverdue,
     is_partially_paid: totalPaid > 0 && outstanding > 0,
   };
@@ -189,7 +195,7 @@ export function computeStatus(inv: Invoice, data: StoreData, todayStr: string): 
   const credits = data.credits.filter((c) => c.business_id === inv.business_id && c.invoice_id === inv.id);
   const totalPaid = sumMoney(payments.map((p) => p.amount));
   const totalCredits = sumMoney(credits.map((c) => c.amount));
-  const outstanding = Math.max(0, subtractMoney(subtractMoney(inv.invoice_amount, totalPaid), totalCredits));
+  const outstanding = Math.max(0, subtractMoney(subtractMoney(sumMoney([inv.invoice_amount, debitTotal(data, inv)]), totalPaid), totalCredits));
   if (outstanding <= 0) return 'paid';
   return daysOverdue(inv.due_date, todayStr) > 0 ? 'overdue' : 'pending';
 }

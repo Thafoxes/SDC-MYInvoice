@@ -104,6 +104,7 @@ export const confirmDelivery = command('confirmDelivery', workflow.confirmDelive
 export const issueOrderInvoice = command('issueOrderInvoice', workflow.issueOrderInvoice);
 export const issueCreditNote = command('issueCreditNote', workflow.issueCreditNote);
 export const acceptDeliveryShortfall = command('acceptDeliveryShortfall', workflow.acceptDeliveryShortfall);
+export const issueDebitNote = command('issueDebitNote', workflow.issueDebitNote);
 export const createPaymentClaim = command('createPaymentClaim', workflow.createPaymentClaim);
 export const reviewPaymentClaim = command('reviewPaymentClaim', workflow.reviewPaymentClaim);
 export const setOrderCase = command('setOrderCase', workflow.setOrderCase);

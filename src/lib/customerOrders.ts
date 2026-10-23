@@ -64,7 +64,7 @@ export function deletePurchaseOrder(orderId: string, actorName: string, actorRol
   if (data.invoices.some(i => i.purchase_order_id === orderId) || data.quotations.some(q => q.purchase_order_id === orderId))
     return { success:false, error:'This PO has quotations or invoices. It cannot be deleted.' };
   // Preserve evidence and workflow history rather than silently orphaning it.
-  const linked = ['orderEvidence','deliveryConfirmations','orderCases','paymentClaims','settlementReceipts','creditNotes'] as const;
+  const linked = ['orderEvidence','deliveryConfirmations','orderCases','paymentClaims','settlementReceipts','creditNotes','debitNotes'] as const;
   if (linked.some(key => (data as unknown as Record<string, any[]>)[key]?.some(item => item.purchase_order_id === orderId)))
     return { success:false, error:'This PO has supporting records. Resolve or archive it instead.' };
   update(state => { state.purchaseOrders = state.purchaseOrders.filter(o => o.id !== orderId);

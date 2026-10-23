@@ -226,6 +226,7 @@ export interface InvoiceWithCustomer extends Invoice {
   outstanding_balance: number;
   total_paid: number;
   total_credits: number;
+  total_debits?: number;
   days_overdue: number;
   is_partially_paid: boolean;
 }

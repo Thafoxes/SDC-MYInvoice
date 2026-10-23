@@ -88,3 +88,25 @@ test('the server accepts both commands only for this business', async t => {
   assert.equal(ok.status, 200);
   assert.equal(ok.result.result.amount, 100);
 });
+
+test('a debit note adds agreed charges after invoicing, reopens a paid invoice and cancels old reminders', t => {
+  const { orderId } = acceptedOrder(t);
+  workflow.confirmDelivery(orderId, 'Kuih box', 100, 'All accepted', null, ...actor);
+  assert.throws(() => workflow.issueDebitNote(orderId, 'Second trip', 30, 'Buyer asked', ...actor), /Create the invoice/);
+  const inv = workflow.issueOrderInvoice(orderId, 'INV-3', '2026-10-23', '2026-11-22', ...actor);
+  assert.throws(() => workflow.issueDebitNote(orderId, 'Second trip', 30, 'Buyer asked', 'Staff', 'staff', 'biz-001'), /Seller approval/);
+  assert.throws(() => workflow.issueDebitNote(orderId, 'Second trip', -5, 'Buyer asked', ...actor), /positive amount/);
+  assert.throws(() => workflow.issueDebitNote(orderId, 'Second trip', 30, '', ...actor), /reason/);
+  core.update(d => { d.followUpActions.push({ id: 'fu-old', business_id: 'biz-001', invoice_id: inv.id, customer_id: d.invoices[0].customer_id,
+    checkpoint: 2, message: 'Please pay RM 500', message_version: 1, approval_state: 'pending', send_state: 'not_sent', approved_by: null,
+    approved_at: null, approved_message_hash: null, recipient: '+60123456789', delivery_status: null, created_at: '2026-10-23T00:00:00Z' }); });
+  const note = workflow.issueDebitNote(orderId, 'Second delivery trip', 30, 'Buyer asked for a second drop-off on 24 Oct', ...actor);
+  assert.equal(note.number, 'DN-ORD-1-1');
+  assert.equal(balance(), 530);
+  assert.equal(core.getStore().invoices[0].invoice_amount, 500, 'the original amount is kept');
+  assert.equal(core.getStore().followUpActions.find(f => f.id === 'fu-old').approval_state, 'cancelled');
+  const claim = workflow.createPaymentClaim(inv.id, 500, 'BANK-1', null, ...actor);
+  workflow.reviewPaymentClaim(claim.id, true, 'Bank statement checked', ...actor);
+  assert.equal(balance(), 30, 'paying the original amount leaves the debit note open');
+  assert.equal(core.computeStatus(core.getStore().invoices[0], core.getStore(), '2026-10-23'), 'pending');
+});

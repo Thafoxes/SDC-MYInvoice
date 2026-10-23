@@ -27,8 +27,11 @@ export interface SettlementReceipt { id: string; business_id: string; purchase_o
  payment_id: string; receipt_number: string; amount: number; issued_at: string; issued_by: string; }
 export interface OrderCase { id: string; business_id: string; purchase_order_id: string; kind: 'dispute'|'missing_document'|'other';
  reason: string; status: 'open'|'resolved'; opened_at: string; resolved_at: string | null; resolution_note: string; }
+/** A debit note raises what the buyer owes for agreed extra charges. It never edits the original invoice. */
+export interface DebitNote { id: string; business_id: string; purchase_order_id: string; invoice_id: string; number: string;
+ description: string; amount: number; reason: string; created_at: string; created_by: string; }
 export type WorkflowData = { quotations: Quotation[]; orderEvidence: OrderEvidence[]; deliveryConfirmations: DeliveryConfirmation[];
- paymentClaims: PaymentClaim[]; settlementReceipts: SettlementReceipt[]; orderCases: OrderCase[]; creditNotes: CreditNote[] };
+ paymentClaims: PaymentClaim[]; settlementReceipts: SettlementReceipt[]; orderCases: OrderCase[]; creditNotes: CreditNote[]; debitNotes: DebitNote[] };
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -271,4 +274,23 @@ export function blockedOrders(businessId=DEMO_BUSINESS_ID):{order:PurchaseOrder;
      :b.source==='Payment claim'?'Check the bank or gateway, then verify or reject the claim'
      :b.source==='Invoice review'?'Resolve the dispute before any reminder'
      :'Review the issue and record a resolution'}))})).filter(x=>x.blockers.length);
+}
+
+/** Seller adds agreed extra charges (for example a second delivery trip) to an issued invoice.
+ * The balance goes up, the original invoice stays as issued, and reminders drafted for the old amount are cancelled. */
+export function issueDebitNote(poId:string,description:string,amount:number,reason:string,actor:string,role:string,businessId=DEMO_BUSINESS_ID){
+ seller(actor,role,businessId);const po=orderFor(poId,businessId);
+ const invoice=getStore().invoices.find(x=>x.purchase_order_id===poId&&x.business_id===businessId);
+ if(!invoice)throw Error('Create the invoice before adding a debit note');
+ if(!validText(description,120)||!description.trim())throw Error('Describe the extra charge');
+ if(!Number.isFinite(amount)||amount<=0||amount>1e7||round2(amount)!==amount)throw Error('Enter a positive amount with at most 2 decimals');
+ if(!validText(reason,500)||!reason.trim())throw Error('Give the reason and who agreed to the charge');
+ const noteId=id();let number='';
+ update(d=>{number=`DN-${po.reference}-${d.debitNotes.filter(n=>n.purchase_order_id===poId).length+1}`;let cancelled=0;
+   for(const fu of d.followUpActions.filter(f=>f.invoice_id===invoice.id&&f.business_id===businessId&&f.send_state==='not_sent'&&['pending','approved'].includes(f.approval_state))){
+     Object.assign(fu,{send_state:'cancelled',approval_state:'cancelled',approved_by:null,approved_at:null,approved_message_hash:null,delivery_status:`Debit note ${number} changed the balance`});cancelled++;}
+   d.debitNotes.push({id:noteId,business_id:businessId,purchase_order_id:poId,invoice_id:invoice.id,number,description:description.trim(),amount,reason:reason.trim(),created_at:now(),created_by:actor});
+   event(d,'debit_note_issued',poId,actor,`Debit note ${number}: ${description.trim()} +${amount.toFixed(2)} (${reason.trim()})${cancelled?`; ${cancelled} reminder(s) for the old amount cancelled`:''}`);
+ });
+ return {success:true,id:noteId,number,amount};
 }
