@@ -78,3 +78,9 @@ export function downloadDocumentPdf(filename:string,title:string,sections:Docume
  const blob=new Blob([createDocumentPdf(title,sections)],{type:'application/pdf'});
  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename.replace(/[^a-z0-9_.-]/gi,'_');document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+
+export function viewDocumentPdf(title:string,sections:DocumentSection[]){
+ const blob=new Blob([createDocumentPdf(title,sections)],{type:'application/pdf'});
+ const url=URL.createObjectURL(blob);window.open(url,'_blank','noopener,noreferrer');
+ setTimeout(()=>URL.revokeObjectURL(url),60000);
+}

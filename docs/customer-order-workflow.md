@@ -118,3 +118,15 @@ Open **Settings** in the sidebar. Fill in the supplier/seller name, address, pho
 The salesperson setting is a document name, not a login or permission change. Leaving it blank uses the seller account name. New quotations keep the name recorded when created, including subsequent revisions. New invoices record the name set when issued. Later settings changes do not replace those recorded preparers. Older documents with no recorded preparer print `-`.
 
 Settings use the current workspace's persistence: browser localStorage in browser-only mode, or the backend database when enabled. Seller contacts project to the existing MariaDB business columns; salesperson and per-document preparer names are retained in the runtime snapshot without requiring new schema columns. Resetting the demo resets settings as well as transactions.
+
+## Paid invoice, final receipt and order completion
+
+Invoice Details now contains **View / print invoice PDF** and download buttons. PDF views open in a new tab; use the PDF viewer’s Print action. The same document controls are available under the order’s **Payment and receipt** section.
+
+1. Record a payment only after checking actual bank/payment-provider records or receiving cash. Confirm this in the payment dialog. Existing manually recorded payments already reduce the invoice balance; do not record them again to obtain a receipt.
+2. When the balance is zero, finish any outstanding payment-claim review, verification hold, dispute or open review case. Enter the verification source/settlement note, confirm the funds/credits check, and click **Confirm settlement and issue final receipt**.
+3. **View / print final receipt** opens the final settlement document. It lists the original invoice amount, debit adjustments, credit adjustments, actual recorded payments, references and seller confirmation. Credits are not described as cash received; an entirely credited invoice produces a settlement statement.
+4. Record delivery acceptance for every item, or explicitly resolve each shortfall using the delivery/credit-note workflow. A paid invoice is not proof that delivery happened.
+5. Click **Complete order** and confirm. The server rechecks processing approval, quotation acceptance, delivery, payment review, the settled balance and the current final receipt. Remaining blockers are listed with a link to the order.
+
+Issuing a receipt does not post a payment. Repeating issuance for the same settlement reuses the receipt. Extra charges or financial changes invalidate its use for current completion; earlier settlement information remains in the audit history. After the additional balance is settled, issue an updated final receipt and reconfirm completion. All of this remains seller-recorded: the app does not contact your bank or provide production authentication.

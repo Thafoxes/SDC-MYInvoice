@@ -5,6 +5,7 @@
  * Only this application should mutate the projection tables in this demo phase.
  */
 const { createHash } = require('node:crypto');
+const {hasCurrentFinalReceipt,settlementBlockers}=require('../.server-build/lib/settlement.js');
 const { DEMO_BUSINESS_ID } = require('../.server-build/lib/store.js');
 
 const PROJECTED = [
@@ -48,7 +49,14 @@ function projectState(state, evidenceRows = []) {
     const q = firstQuotation(po.id);
     const issuedInvoice = state.invoices.find(i => i.purchase_order_id === po.id);
     const associatedPayments = state.payments.filter(p => p.invoice_id === issuedInvoice?.id && p.verification_status === 'recorded');
-    const receipt = state.settlementReceipts.find(r => r.purchase_order_id === po.id);
+    const receipt = issuedInvoice?.final_receipt;
+    const settled=!!issuedInvoice && settlementBlockers(issuedInvoice,state).length===0;
+    const deliveryComplete=!!po.details?.items.length && po.details.items.every(item=>{
+      const delivery=state.deliveryConfirmations.find(d=>d.purchase_order_id===po.id&&d.item_name===item.name);
+      const credited=state.creditNotes.filter(n=>n.purchase_order_id===po.id&&n.item_name===item.name).reduce((sum,n)=>sum+n.quantity,0);
+      return !!delivery && (delivery.accepted_quantity+credited>=item.quantity||!!delivery.shortfall_accepted_at);
+    });
+    const completed=!!po.completed_at && settled && deliveryComplete && q?.status==='accepted' && po.status==='approved' && hasCurrentFinalReceipt(issuedInvoice,state) && po.completion_key===receipt?.financial_key;
     const cases = state.orderCases.filter(c => c.purchase_order_id === po.id && c.status === 'open');
     const buyerDecision = q?.status === 'accepted' ? 'accepted' : q?.status === 'rejected' ? 'rejected' : q?.status === 'revision_requested' ? 'revision_requested' : 'not_requested';
     const lines = details.items || [];
@@ -80,13 +88,13 @@ function projectState(state, evidenceRows = []) {
     });
     const milestones = [
       ['po', true], ['quotation', !!q], ['buyer_approval', q?.status==='accepted'],
-      ['fulfilment', !!state.deliveryConfirmations.find(d => d.purchase_order_id===po.id)],
-      ['invoice',!!issuedInvoice], ['payment',associatedPayments.length>0], ['receipt',!!receipt],
+      ['fulfilment', deliveryComplete],
+      ['invoice',!!issuedInvoice], ['payment',settled], ['receipt',completed],
     ];
     for (const [stage, complete] of milestones) add('order_stages', {
       id:fixedId(`stage:${po.id}:${stage}`), business_id:po.business_id,purchase_order_id:po.id,
       stage_code:stage,stage_status:cases.length && ['invoice','payment'].includes(stage)?'blocked':complete?'completed':'not_started',
-      completed_at:complete?dt((stage==='po'?po.created_at:stage==='quotation'?q?.updated_at:stage==='buyer_approval'?q?.updated_at:stage==='payment'?associatedPayments.at(-1)?.created_at:stage==='receipt'?receipt?.issued_at:issuedInvoice?.created_at)):null,
+      completed_at:complete?dt((stage==='po'?po.created_at:stage==='quotation'?q?.updated_at:stage==='buyer_approval'?q?.updated_at:stage==='payment'?associatedPayments.at(-1)?.created_at:stage==='receipt'?po.completed_at:issuedInvoice?.created_at)):null,
       summary: cases.length ? 'Open seller review case' : null,
     });
   }

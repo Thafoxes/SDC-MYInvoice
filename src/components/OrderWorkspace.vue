@@ -10,6 +10,9 @@ import { saveQuotation,copyQuotationToOrder,setQuotationDecision,confirmDelivery
  setOrderCase,resolveOrderCase,uploadOrderEvidence,attachOrderEvidence,issueCreditNote,acceptDeliveryShortfall,issueDebitNote } from '@/services/commands';
 import type { OrderEvidence } from '@/lib/orderWorkflow';
 import { Check, AlertTriangle, Minus, FileText } from 'lucide-vue-next';
+import InvoiceDocuments from '@/components/InvoiceDocuments.vue';
+import {invoiceDocument} from '@/lib/invoiceDocuments';
+import {hasCurrentFinalReceipt} from '@/lib/settlement';
 import BlockerRequest from '@/components/BlockerRequest.vue';
 import type { RequestFacts, RequestKind } from '@/presentation/blockerRequest';
 import { customerLang } from '@/lib/reminderTemplates';
@@ -48,7 +51,7 @@ const uploading=ref(false);
 const sourceLabel:Record<string,string>={manual:'entered by hand',chat_screenshot:'from a chat screenshot',uploaded_po:"from the buyer's PO"};
 const buyerPos=computed(()=>evidence.value.filter(e=>e.kind==='existing_po'));
 const stages=computed(()=>orderStages({order:props.order,quotation:quote.value,evidence:evidence.value,deliveries:delivery.value,
- creditNotes:creditNotes.value,invoice:invoiceView.value,receiptCount:receipts.value.length,criticalBlockers:blockers.value.filter(b=>b.critical).length,money:asMoney}));
+ creditNotes:creditNotes.value,invoice:invoiceView.value,receiptCount:receipts.value.length,finalReceiptIssued:!!invoice.value&&hasCurrentFinalReceipt(invoice.value,data.value),completionConfirmed:!!props.order.completed_at&&props.order.completion_key===invoice.value?.final_receipt?.financial_key,criticalBlockers:blockers.value.filter(b=>b.critical).length,money:asMoney}));
 const next=computed(()=>nextStage(stages.value));
 const stageCard:Record<StageState,string>={done:'border-emerald-200 bg-emerald-50 text-emerald-900',
  current:'border-blue-400 bg-blue-50 text-blue-900 ring-1 ring-blue-400',blocked:'border-rose-300 bg-rose-50 text-rose-900',
@@ -129,6 +132,7 @@ const invoiceGate=computed(()=>{
 const pendingCredit=computed(()=>creditNotes.value.filter(n=>!n.invoice_id).reduce((s,n)=>s+n.amount,0));
 function asMoney(n:number|null|undefined){return `${quote.value?.currency||props.order.details?.currency||'MYR'} ${(n||0).toFixed(2)}`;}
 function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
+ if(kind==='invoice'&&invoice.value){const doc=invoiceDocument(data.value,invoice.value.id,'invoice');downloadDocumentPdf(doc.filename,doc.title,doc.sections);return;}
  const po=props.order;const lines=((kind==='quote'||kind==='invoice')?quote.value?.items||po.details?.items:po.details?.items)||[];
  const title=kind==='po'?'ORDER SUMMARY FOR BUYER REVIEW':kind==='quote'?'QUOTATION':kind==='invoice'?'INVOICE TRACKING COPY':'PAYMENT RECEIPT';
  const reference=kind==='po'?po.reference:kind==='quote'?quote.value?.reference:kind==='invoice'?invoice.value?.invoice_number:receipts.value.find(r=>r.id===receiptId)?.receipt_number;
@@ -276,6 +280,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
      <div v-if="claim.status==='pending'" class="space-y-2"><input v-model="verificationNotes[claim.id]" class="form-input" placeholder="Verification source / reason (required)" />
       <button class="primary-btn" :disabled="busy" @click="verifyClaim(claim.id,true)">Seller confirms funds received</button>
       <button class="outline-btn ml-2" :disabled="busy" @click="verifyClaim(claim.id,false)">Reject claim</button></div></div>
+    <InvoiceDocuments v-if="invoice" :key="invoice.id" :invoice-id="invoice.id" :seller-name="actor.name" :seller-role="actor.role" />
     <div v-for="receipt in receipts" :key="receipt.id" class="flex gap-2 items-center text-xs"><span>{{receipt.receipt_number}} · {{asMoney(receipt.amount)}}</span><button class="outline-btn" @click="download('receipt',receipt.id)">Download receipt PDF</button></div>
   </div>
   <div class="rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Payment blockers &amp; seller review</h4>

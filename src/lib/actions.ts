@@ -77,7 +77,7 @@ export function recordPayment(
 
   addPayment(invoiceId, amount, paymentDate, method, reference, 'recorded');
   addActivity(businessId, invoiceId, 'payment_recorded', actorName, 'seller',
-    `Synthetic payment of RM${amount.toFixed(2)} recorded for ${inv.invoice_number}`);
+    `Seller-recorded payment of RM${amount.toFixed(2)} recorded for ${inv.invoice_number}`);
   // Any changed invoice ledger invalidates drafts and previous approvals; new checkpoint
   // cannot silently regenerate a cancelled action, seller must explicitly revisit it.
   invalidateOpenActions(invoiceId, businessId, 'Invoice ledger changed after reminder was drafted');

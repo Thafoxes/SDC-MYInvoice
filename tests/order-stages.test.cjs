@@ -56,7 +56,7 @@ test('payment shows holds and part payments, and a settled order is completed', 
   assert.equal(states(part).payment, 'current');
   assert.equal(part.find(x => x.key === 'payment').detail, 'Part paid; RM 300.00 left');
   assert.equal(states(orderStages({ ...invoiced, invoice: { ...inv, dispute_active: true } })).payment, 'blocked');
-  const paid = orderStages({ ...invoiced, invoice: { ...inv, outstanding_balance: 0, total_paid: 500 }, receiptCount: 1 });
+  const paid = orderStages({ ...invoiced, invoice: { ...inv, outstanding_balance: 0, total_paid: 500 }, receiptCount: 1, finalReceiptIssued:true, completionConfirmed:true });
   assert.ok(paid.every(x => x.state === 'done'));
   assert.deepEqual(stageSummary(paid), { label: 'Completed', state: 'done' });
 });
@@ -70,4 +70,15 @@ test('a credit note or a kept shortfall completes delivery', async () => {
   assert.equal(states(credited).invoice, 'current');
   const kept = orderStages({ ...accepted, deliveries: [{ item_name: 'Kuih box', accepted_quantity: 80, shortfall_accepted_at: '2026-10-23' }] });
   assert.equal(kept.find(x => x.key === 'delivery').detail, 'Shortfall kept with a reason');
+});
+
+test('a paid invoice and payment receipt alone do not complete an order',async()=>{
+ const {orderStages,stageSummary}=await mod;
+ const invoice={invoice_number:'INV-1',outstanding_balance:0,total_paid:500,dispute_active:false,verification_hold:false};
+ const input={...base,order:{...base.order,status:'approved'},quotation:{status:'accepted',reference:'QT-1'},invoice,receiptCount:1};
+ const stages=orderStages(input);assert.notEqual(stageSummary(stages).label,'Completed');assert.equal(stages.find(s=>s.key==='delivery').state,'current');
+ const delivered={...input,deliveries:[{item_name:'Kuih box',accepted_quantity:100}],finalReceiptIssued:true,completionConfirmed:false};
+ assert.equal(orderStages(delivered).find(s=>s.key==='receipt').state,'current');
+ assert.equal(stageSummary(orderStages({...delivered,completionConfirmed:true})).label,'Completed');
+ assert.notEqual(stageSummary(orderStages({...delivered,completionConfirmed:true,invoice:{...invoice,verification_hold:true}})).label,'Completed');
 });

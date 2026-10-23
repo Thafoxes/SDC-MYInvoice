@@ -38,6 +38,11 @@ export interface Customer {
   address?: string | null;
 }
 
+export interface FinalReceipt {
+  number:string; issued_at:string; issued_by:string; verification_note:string; financial_key:string;
+  invoice_amount:number; total_debits:number; total_credits:number; total_paid:number;
+  payments:Pick<Payment,'id'|'amount'|'payment_date'|'method'|'reference'>[];
+}
 export interface Invoice {
   id: string;
   business_id: string;
@@ -46,6 +51,7 @@ export interface Invoice {
   purchase_order_id?: string;
   quotation_id?: string;
   prepared_by?: string;
+  final_receipt?: FinalReceipt;
   invoice_amount: number;
   issue_date: string;
   due_date: string;
@@ -90,6 +96,9 @@ export interface PurchaseOrder {
   status: 'draft' | 'approved';
   created_at: string;
   source_mode?: 'manual' | 'chat_screenshot' | 'uploaded_po';
+  completed_at?: string;
+  completed_by?: string;
+  completion_key?: string;
   approved_at?: string;
   approved_by?: string;
   override?: { reason: string; actor: string; approved_at: string; blockers: OrderBlocker[];

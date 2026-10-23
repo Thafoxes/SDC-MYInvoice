@@ -3,6 +3,7 @@ import * as actions from '@/lib/actions';
 import * as store from '@/lib/store';
 import * as customerOrders from '@/lib/customerOrders';
 import * as workflow from '@/lib/orderWorkflow';
+import * as settlement from '@/lib/settlement';
 import * as businessSettings from '@/lib/businessSettings';
 import type { PurchaseOrderDetails } from '@/types';
 import { runInvoiceCheck as localCheck } from '@/lib/reminderEngine';
@@ -63,6 +64,8 @@ export const reviewCustomerPromise = command('reviewCustomerPromise', actions.re
 export const simulateCustomerResponse = command('simulateCustomerResponse', actions.simulateCustomerResponse);
 export const recordPayment = command('recordPayment', actions.recordPayment);
 export const setCustomerLanguage = command('setCustomerLanguage', actions.setCustomerLanguage);
+export const issueFinalReceipt = command('issueFinalReceipt', settlement.issueFinalReceipt);
+export const completeOrder = command('completeOrder', settlement.completeOrder);
 export const saveBusinessSettings = command('saveBusinessSettings', businessSettings.saveBusinessSettings);
 export const createCustomer = command('createCustomer', customerOrders.createCustomer);
 export const updateCustomer = command('updateCustomer', customerOrders.updateCustomer);

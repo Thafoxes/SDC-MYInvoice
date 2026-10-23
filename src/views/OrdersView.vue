@@ -12,6 +12,7 @@ import type { CustomerExtraction } from '@/lib/customerOrders';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { DEMO_BUSINESS_ID, DEMO_SELLER_ID } from '@/lib/store';
 import { getOrderEligibility } from '@/lib/customerOrders';
+import {hasCurrentFinalReceipt} from '@/lib/settlement';
 import { deriveOrderBlockers } from '@/lib/orderWorkflow';
 import { orderStages, stageSummary, hasBuyerPo } from '@/presentation/orderStages';
 import type { StageState } from '@/presentation/orderStages';
@@ -158,7 +159,7 @@ function orderProgress(order: PurchaseOrder) {
     deliveries:d.deliveryConfirmations.filter(c=>c.purchase_order_id===order.id),
     creditNotes:(d.creditNotes||[]).filter(n=>n.purchase_order_id===order.id),
     invoice:inv?computeInvoiceWithCustomer(inv,d,d.demoState.simulated_date):null,
-    receiptCount:d.settlementReceipts.filter(r=>r.purchase_order_id===order.id).length,
+    receiptCount:d.settlementReceipts.filter(r=>r.purchase_order_id===order.id).length,finalReceiptIssued:!!inv&&hasCurrentFinalReceipt(inv,d),completionConfirmed:!!order.completed_at&&order.completion_key===inv?.final_receipt?.financial_key,
     criticalBlockers:deriveOrderBlockers(order.id).filter(b=>b.critical).length,money:formatMYR});
   return { summary: stageSummary(stages), buyerPo: hasBuyerPo({order,evidence}) };
 }

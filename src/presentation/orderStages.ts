@@ -17,6 +17,8 @@ export interface StageInput {
   creditNotes?: Pick<CreditNote, 'item_name' | 'quantity'>[];
   invoice?: { invoice_number: string; outstanding_balance: number; total_paid: number; dispute_active: boolean; verification_hold: boolean } | null;
   receiptCount: number;
+  finalReceiptIssued?: boolean;
+  completionConfirmed?: boolean;
   criticalBlockers: number;
   money?: (amount: number) => string;
 }
@@ -72,19 +74,18 @@ export function orderStages(input: StageInput): OrderStage[] {
           ? credited.map(l => `${l.delivery!.accepted_quantity} accepted, ${l.credited} credited`).join('; ')
           : kept.length ? 'Shortfall kept with a reason' : 'All items accepted' }
       : deliveryRecorded ? { state: 'pending', detail: 'Record acceptance for the remaining items' }
-      : inv ? { state: 'skipped', detail: 'Acceptance not recorded' }
       : { state: 'pending', detail: 'Record the quantity the buyer accepted' },
     invoice: inv ? { state: 'done', detail: `${inv.invoice_number} issued` }
       : accepted && input.criticalBlockers > 0 ? { state: 'blocked', detail: 'Resolve the blocker before invoicing' }
       : { state: 'pending', detail: 'Create the invoice for the accepted quantity' },
     payment: !inv ? { state: 'pending', detail: 'Starts when the invoice is issued' }
-      : inv.outstanding_balance <= 0 ? { state: 'done', detail: 'Paid in full' }
       : inv.dispute_active ? { state: 'blocked', detail: 'On hold while a dispute is open' }
       : inv.verification_hold ? { state: 'pending', detail: "Verify the buyer's payment claim" }
+      : inv.outstanding_balance <= 0 ? { state: 'done', detail: 'Settled in full' }
       : inv.total_paid > 0 ? { state: 'pending', detail: `Part paid; ${money(inv.outstanding_balance)} left` }
       : { state: 'pending', detail: `Waiting for ${money(inv.outstanding_balance)}` },
-    receipt: inv && inv.outstanding_balance <= 0 && input.receiptCount > 0 ? { state: 'done', detail: 'Receipt issued' }
-      : inv && inv.outstanding_balance <= 0 ? { state: 'pending', detail: 'Issue the receipt' }
+    receipt: inv && inv.outstanding_balance <= 0 && !inv.dispute_active && !inv.verification_hold && input.criticalBlockers===0 && input.finalReceiptIssued && input.completionConfirmed ? { state: 'done', detail: 'Final receipt issued; order completed' }
+      : inv && inv.outstanding_balance <= 0 ? { state: 'pending', detail: input.finalReceiptIssued?'Complete the order after resolving delivery and review steps':'Confirm settlement and issue the final receipt' }
       : { state: 'pending', detail: 'Issued after payment is verified' },
   };
 
