@@ -57,10 +57,9 @@ The exception applies to that order only. It never clears invoice disputes, chan
 
 ## Run and verify
 
-- Browser-only mode: set `VITE_BACKEND_ENABLED=false` and `VITE_TELEGRAM_ENABLED=false`, then run `npm run dev`. Manual intake and order approval use the existing browser store; OCR is clearly disabled.
-- Backend mode: set `VITE_BACKEND_ENABLED=true`. Telegram is not required for the new features; set `VITE_TELEGRAM_ENABLED=false`. Run `npm run server` and `npm run dev`. Existing environment changes require restarting the relevant process.
+- Browser-only mode: set `VITE_BACKEND_ENABLED=false`, then run `npm run dev`. Manual intake and order approval use the existing browser store; OCR is clearly disabled.
+- Backend mode: set `VITE_BACKEND_ENABLED=true`. Run `npm run server` and `npm run dev`. Existing environment changes require restarting the relevant process.
 - OCR additionally needs the existing `DOCLING_PYTHON`, `OLLAMA_API_KEY`, and `OLLAMA_MODEL` configuration. Incoming contact text is sent to the configured cloud model for extraction.
-- Existing backend polling starts if a Telegram token is configured. To run this proof of concept without Telegram activity, leave `TELEGRAM_BOT_TOKEN` empty in the environment used for the backend. Email replacement remains a separate planned change.
 - `npm run test:logic`: existing invoice/language checks plus phone, duplicate, hold, migration, scope, and override tests.
 - `npm run test:customers`: mocked customer OCR and backend approval tests, including bounded file validation and cleanup. No paid model calls.
 - `npm run test:po`: empty-start/sample-cleanup checks, exact PNG evidence retention across restart, extraction failure, business isolation, numeric validation and draft/approval checks.

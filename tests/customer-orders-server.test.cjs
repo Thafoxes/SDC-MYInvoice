@@ -83,6 +83,17 @@ test('customer extraction rejects invented shapes and oversized or control-chara
     assert.throws(() => validateCustomerExtraction(value), /Invalid/);
 });
 
+test('customer extraction requires OCR evidence for every proposed field', () => {
+  const value = { name: 'Buyer Ltd', phone: '+60 12-345 6789', email: 'buyer@example.test', address: '12 Main Street' };
+  const text = 'Buyer Ltd\n+60 12 345 6789\nbuyer@example.test\n12 Main Street';
+  assert.deepEqual(validateCustomerExtraction(value, text), value);
+  for (const field of Object.keys(value)) {
+    assert.throws(() => validateCustomerExtraction({ ...value, [field]: 'Invented customer detail' }, text), /not supported by the OCR/);
+  }
+  assert.throws(() => validateCustomerExtraction(value, '<!-- image -->'), /not supported by the OCR/);
+  assert.throws(() => validateCustomerExtraction({ name: null, phone: null, email: null, address: null }, text), /No customer details/);
+});
+
 test('customer commands cannot target a different business or create customers as a buyer', async t => {
   const { backend } = fixture(t);
   const input = { name: 'Buyer Ltd', phone: '0123456789', email: null, address: null };

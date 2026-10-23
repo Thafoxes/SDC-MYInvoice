@@ -3,7 +3,7 @@ import { computed, ref, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { blockedOrders } from '@/lib/orderWorkflow';
 import { AlertTriangle } from 'lucide-vue-next';
-import TelegramPreview from '@/components/TelegramPreview.vue';
+import MessagePreview from '@/components/MessagePreview.vue';
 import AttentionQueue from '@/components/AttentionQueue.vue';
 import CustomerReplyCard from '@/components/CustomerReplyCard.vue';
 import { getAttention, type AttentionItem } from '@/lib/attention';
@@ -15,8 +15,6 @@ import { DEMO_BUSINESS_ID, DEMO_SELLER_ID, DEMO_BUSINESS_NAME, computeInvoiceWit
 import { approveFollowUp, rejectFollowUp, editFollowUpMessage, sendApprovedFollowUp, setCustomerLanguage } from '@/services/commands';
 import { formatMYR, formatDate, formatDateTime } from '@/lib/format';
 import type { FollowUpAction, InvoiceWithCustomer } from '@/types';
-import { telegramEnabled } from '@/services/commands';
-import TelegramReceipts from '@/components/TelegramReceipts.vue';
 import BaseModal from '@/components/BaseModal.vue';
 import InvoiceDetailDrawer from '@/components/InvoiceDetailDrawer.vue';
 import StatusBadge from '@/components/StatusBadge.vue';
@@ -60,7 +58,6 @@ const route=useRoute();
 let handledRoute='';
 watch([()=>route.fullPath,data],async()=>{
  if(handledRoute===route.fullPath)return;
- if(telegramEnabled && data.value.receipts===undefined)return;
  const reply=typeof route.query.reply==='string'?route.query.reply:'';
  const receipt=typeof route.query.receipt==='string'?route.query.receipt:'';
  if(reply)tab.value='responses';
@@ -74,15 +71,15 @@ watch([()=>route.fullPath,data],async()=>{
 </script>
 <template>
 <div class="space-y-5">
- <TelegramReceipts />
+
  <div v-if="toast" role="status" class="fixed right-5 top-20 z-50 rounded-xl bg-orbyte-ink p-3 text-sm text-white shadow-xl">{{toast}}</div>
  <div class="card flex flex-wrap gap-1.5 p-1.5"><button v-for="t in tabs" :key="t.id" @click="tab=t.id" :aria-pressed="tab===t.id" class="rounded-lg px-3.5 py-2 text-sm font-medium transition" :class="tab===t.id?'bg-orbyte-button text-white shadow-sm':'text-orbyte-muted hover:bg-orbyte-bg'">{{t.label}} <span v-if="t.count" class="ml-1 rounded-full px-1.5 text-[10px]" :class="tab===t.id?'bg-white/20':'bg-orbyte-bg'">{{t.count}}</span></button></div>
  <section v-if="tab==='all'||tab==='approval'" class="space-y-3"><h3 class="text-sm font-semibold">Reminder Approvals</h3><p v-if="!followUps.length" class="card p-6 text-sm text-orbyte-muted">No reminders yet. Use Demo Controls → Run Invoice Check to create drafts.</p>
    <div v-for="f in followUps" :key="f.id" class="card p-5"><div class="flex flex-col gap-4 lg:flex-row lg:justify-between"><div class="space-y-2 flex-1"><div class="flex flex-wrap items-center gap-2"><h4 class="font-semibold">{{f.customer?.name||'—'}}</h4><span class="text-sm text-orbyte-muted">{{f.invoice?.invoice_number}}</span><StatusBadge v-if="f.invoice" :status="f.invoice.status"/></div>
      <div class="flex flex-wrap gap-4 text-xs text-orbyte-muted"><span>Outstanding: <b class="text-orbyte-ink">{{formatMYR(f.invoice?.outstanding_balance||0)}}</b></span><span>Due: {{formatDate(f.invoice?.due_date||'')}}</span><span>Checkpoint: {{f.checkpoint}}</span><span v-if="f.invoice?.days_overdue" class="text-red-600">{{f.invoice.days_overdue}} days overdue</span></div>
-     <p class="text-xs text-orbyte-muted">{{f.reason}} <span class="ml-1 inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-[12px] font-medium text-purple-700" title="Language from the customer's preference; tone set by how late the invoice is">{{toneChip(f)}} · auto</span></p><TelegramPreview :message="f.message" :recipient-name="f.customer?.name" :sender-name="seller.name" /><div class="flex gap-2 items-center text-xs"><span class="rounded-md bg-amber-50 px-2 py-1 capitalize text-amber-700">{{f.approval_state}}</span><span class="rounded-md bg-slate-50 px-2 py-1 capitalize text-slate-600">{{f.send_state}}</span><span v-if="f.delivery_status" class="text-orbyte-muted">{{f.delivery_status}}</span></div></div>
+     <p class="text-xs text-orbyte-muted">{{f.reason}} <span class="ml-1 inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-[12px] font-medium text-purple-700" title="Language from the customer's preference; tone set by how late the invoice is">{{toneChip(f)}} · auto</span></p><MessagePreview :message="f.message" :recipient-name="f.customer?.name" :sender-name="seller.name" /><div class="flex gap-2 items-center text-xs"><span class="rounded-md bg-amber-50 px-2 py-1 capitalize text-amber-700">{{f.approval_state}}</span><span class="rounded-md bg-slate-50 px-2 py-1 capitalize text-slate-600">{{f.send_state}}</span><span v-if="f.delivery_status" class="text-orbyte-muted">{{f.delivery_status}}</span></div></div>
      <div class="flex flex-wrap gap-2 lg:flex-col lg:min-w-[155px]"><template v-if="f.approval_state==='pending'"><button class="success-btn" @click="execute(()=>approveFollowUp(f.id,seller.id,seller.name,seller.role),'Reminder approved')"><Check class="w-4 h-4"/>Approve</button><button class="outline-btn" @click="studioId=f.id"><Languages class="w-4 h-4"/>Tone &amp; language</button><button class="outline-btn" @click="beginEdit(f)"><Pencil class="w-4 h-4"/>Edit</button><button class="danger-btn" @click="execute(()=>rejectFollowUp(f.id,seller.name,seller.role),'Reminder rejected')"><X class="w-4 h-4"/>Reject</button></template>
-       <button v-if="f.approval_state==='approved'&&f.send_state==='not_sent'" class="primary-btn" @click="execute(()=>sendApprovedFollowUp(f.id,seller.name),telegramEnabled?'Invoice message delivered to Telegram':'Message sent (simulated only)')"><Send class="w-4 h-4"/>{{telegramEnabled?'Send to Telegram':'Send (Simulation)'}}</button>
+       <button v-if="f.approval_state==='approved'&&f.send_state==='not_sent'" class="primary-btn" @click="execute(()=>sendApprovedFollowUp(f.id,seller.name),'Message sent (simulated only)')"><Send class="w-4 h-4"/>Send (Simulation)</button>
        <button v-if="f.invoice" class="outline-btn" @click="openInvoice(f.invoice)"><Eye class="w-4 h-4"/>View Invoice</button></div></div></div>
  </section>
  <section v-if="tab==='all'||tab==='responses'" class="space-y-3"><h3 class="text-sm font-semibold">Customer Responses</h3><p v-if="!responses.length" class="card p-6 text-sm text-orbyte-muted">No customer responses yet.</p>

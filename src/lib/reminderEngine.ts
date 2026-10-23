@@ -68,7 +68,7 @@ export function approvalFingerprint(fu: FollowUpAction, invoice: Invoice, data: 
     .map(c => [c.id, c.amount]).sort((a,b) => String(a[0]).localeCompare(String(b[0])));
   const debits = debitTotal(data, invoice);
   const customer = data.customers.find(c => c.id === invoice.customer_id && c.business_id === invoice.business_id);
-  // For the local demo, phone is the placeholder recipient. Telegram will replace it later.
+  // Simulated delivery uses the customer phone as its recipient identifier.
   return messageHash(JSON.stringify({
     business: fu.business_id, invoice: invoice.id, customer: invoice.customer_id,
     amount: invoice.invoice_amount, issued: invoice.issue_date, due: invoice.due_date,
@@ -76,7 +76,6 @@ export function approvalFingerprint(fu: FollowUpAction, invoice: Invoice, data: 
     promise: invoice.promise_confirmed ? invoice.promise_to_pay_date : null,
     payments, credits, ...(debits ? { debits } : {}), message: fu.message, messageVersion: fu.message_version,
     recipient: fu.recipient, actualRecipient: customer?.phone ?? null,
-    telegramRecipient: customer?.telegram_chat_id ?? null,
   }));
 }
 

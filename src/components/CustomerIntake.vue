@@ -97,6 +97,8 @@ async function readDocument(event: Event) {
   const revision = ++intakeRevision;
   busy.value = true;
   error.value = '';
+  notice.value = '';
+  extracted.value = false;
   reviewed.value = false;
   try {
     const result = await extractCustomerDocument(file);
@@ -108,6 +110,8 @@ async function readDocument(event: Event) {
     extracted.value = true;
     notice.value = 'Document read. Check every field against the original before saving.';
   } catch (cause) {
+    console.error('Customer document extraction failed:', cause);
+    if (revision !== intakeRevision) return;
     error.value = cause instanceof Error ? cause.message : 'Could not read this document. Enter the details manually.';
   } finally {
     busy.value = false;

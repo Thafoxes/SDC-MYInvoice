@@ -170,7 +170,7 @@ Anti-pattern guards: an email-received notification is not assumed to contain th
 
 What to implement: preserve the current command/API structure while removing Telegram's control over server-backed storage, AI, and receipt processing. Require valid customer billing addresses for live sending. Replace Telegram UI labels/previews/configuration with email-specific controls; preserve approvals and send-time checks. Remove polling, bot send/download/chat-link routes, active bot configuration, and obsolete Telegram dependencies/fixtures only after replacement coverage exists.
 
-Documentation references: `src/services/commands.ts`, `src/composables/useDemoStore.ts`, `server/app.cjs`, `server/integrations.cjs`, `src/components/TelegramReceipts.vue`, `TelegramPreview.vue`, and `server/README.md`.
+Documentation references: `src/services/commands.ts`, `src/composables/useDemoStore.ts`, `server/app.cjs`, `server/integrations.cjs`, `src/components/MessagePreview.vue`, and `server/README.md`.
 
 Verification: server mode works without a bot token; dashboard and approvals still load; browser-only demo behavior is explicitly supported or clearly disabled; logic tests remain green. No active flow asks for a Telegram chat ID.
 

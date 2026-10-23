@@ -8,8 +8,7 @@ import { runInvoiceCheck as localCheck } from '@/lib/reminderEngine';
 import { askAiAssistant as localAssistant } from '@/lib/aiService';
 import { refreshStore } from '@/composables/useDemoStore';
 
-export const telegramEnabled = import.meta.env.VITE_TELEGRAM_ENABLED === 'true';
-export const backendEnabled = import.meta.env.VITE_BACKEND_ENABLED === 'true' || telegramEnabled;
+export const backendEnabled = import.meta.env.VITE_BACKEND_ENABLED === 'true';
 export const connectionError = ref('');
 function checkAccess(response: Response) {
   if (response.status === 401) {
@@ -17,7 +16,7 @@ function checkAccess(response: Response) {
     throw new Error('Demo access required. Enter the passcode again.');
   }
 }
-export const integration = ref({ model: 'llama3.2:3b', aiMode: 'auto', botConfigured: false, pollingError: '', lastPollAt: null as string | null, receivingAccountName: '' });
+export const integration = ref({ model: 'llama3.2:3b', aiMode: 'auto', receivingAccountName: '' });
 let requestRevision = 0;
 
 export async function refreshServer() {
@@ -122,6 +121,3 @@ export const addActivity = command('addActivity', store.addActivity);
 export const addAiMessage = command('addAiMessage', store.addAiMessage);
 export const clearAiConversation = command('clearAiConversation', store.clearAiConversation);
 export const askAiAssistant = command('askAiAssistant', localAssistant);
-const unavailable = (..._args: string[]) => ({ success: false, error: 'Enable Telegram mode first' });
-export const linkTelegram = command('linkTelegram', unavailable);
-export const resolveReceipt = command('resolveReceipt', unavailable);
