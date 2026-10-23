@@ -13,7 +13,7 @@ const links = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/invoices', label: 'Invoices', icon: FileText },
   { to: '/customers', label: 'Customers', icon: Users },
-  { to: '/orders', label: 'Purchase orders', icon: ClipboardList },
+  { to: '/orders', label: 'Orders', icon: ClipboardList },
   { to: '/action-center', label: 'Action Center', icon: Zap },
   { to: '/ai-assistant', label: 'AI Assistant', icon: Sparkles },
 ];

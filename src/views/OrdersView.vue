@@ -12,6 +12,9 @@ import type { CustomerExtraction } from '@/lib/customerOrders';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { DEMO_BUSINESS_ID, DEMO_SELLER_ID } from '@/lib/store';
 import { getOrderEligibility } from '@/lib/customerOrders';
+import { deriveOrderBlockers } from '@/lib/orderWorkflow';
+import { orderStages, stageSummary, hasBuyerPo } from '@/presentation/orderStages';
+import type { StageState } from '@/presentation/orderStages';
 import { approvePurchaseOrder, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, attachOrderEvidence } from '@/services/commands';
 import type { ChatOrderUpload } from '@/services/commands';
 import { formatMYR } from '@/lib/format';
@@ -91,7 +94,7 @@ async function saveDraft(reference: string, details: PurchaseOrderDetails) {
     const result = activeOrderId.value
       ? await updatePurchaseOrder(activeOrderId.value, reference, details, actor.value.name, actor.value.role, DEMO_BUSINESS_ID)
       : await createPurchaseOrder(customerId.value, reference, actor.value.name, actor.value.role, DEMO_BUSINESS_ID, details, editorMode.value === 'upload' ? 'uploaded_po' : screenshot.value ? 'chat_screenshot' : 'manual');
-    if (!result.success || !result.id) throw new Error(result.error || 'Could not save PO.');
+    if (!result.success || !result.id) throw new Error(result.error || 'Could not save order.');
     activeOrderId.value = result.id;
     const attached = screenshot.value;
     const evidenceId = details.evidence_id;
@@ -105,9 +108,9 @@ async function saveDraft(reference: string, details: PurchaseOrderDetails) {
     screenshot.value = null;
     refreshStore();
     savedRevision.value += 1;
-    notice.value = 'PO details saved. Review eligibility before approval.';
+    notice.value = 'Order details saved. Review eligibility before approval.';
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not save PO.';
+    error.value = cause instanceof Error ? cause.message : 'Could not save order.';
   } finally { busy.value = false; }
 }
 
@@ -118,30 +121,36 @@ async function approve() {
   notice.value = '';
   try {
     const result = await approvePurchaseOrder(activeOrder.value.id, actor.value.name, actor.value.role, DEMO_BUSINESS_ID, reason.value.trim() || undefined);
-    if (!result.success) throw new Error(result.error || 'Could not approve PO.');
+    if (!result.success) throw new Error(result.error || 'Could not approve order.');
     refreshStore();
     reason.value = '';
     notice.value = 'Order approved. Previous invoices and disputes remain unchanged.';
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Could not approve PO.';
+    error.value = cause instanceof Error ? cause.message : 'Could not approve order.';
   } finally { busy.value = false; }
 }
 
 async function removeOrder(order: PurchaseOrder) {
-  if (busy.value || !window.confirm(`Delete draft PO ${order.reference}? This cannot be undone.`)) return;
+  if (busy.value || !window.confirm(`Delete draft order ${order.reference}? This cannot be undone.`)) return;
   busy.value=true; error.value=''; notice.value='';
   try {const result=await deletePurchaseOrder(order.id,actor.value.name,actor.value.role,DEMO_BUSINESS_ID);
-    if(!result.success)throw new Error(result.error||'Could not delete PO');
-    if(activeOrderId.value===order.id)closeEditor(); if(recordPage.value) await router.push('/orders'); refreshStore();notice.value=`PO ${order.reference} deleted.`;
-  }catch(e){error.value=e instanceof Error?e.message:'Could not delete PO';}finally{busy.value=false;}
+    if(!result.success)throw new Error(result.error||'Could not delete order');
+    if(activeOrderId.value===order.id)closeEditor(); if(recordPage.value) await router.push('/orders'); refreshStore();notice.value=`Order ${order.reference} deleted.`;
+  }catch(e){error.value=e instanceof Error?e.message:'Could not delete order';}finally{busy.value=false;}
 }
-function orderStage(order: PurchaseOrder) {
-  const inv=data.value.invoices.find(x=>x.purchase_order_id===order.id);
-  if(inv){const view=computeInvoiceWithCustomer(inv,data.value,data.value.demoState.simulated_date);return view.status==='paid'?'Receipt / settled':'Payment';}
-  const q=data.value.quotations.find(x=>x.purchase_order_id===order.id);
-  if(q)return q.status==='accepted'?'Invoice preparation':q.status==='draft'?'Quotation draft':'Buyer confirmation';
-  return 'PO preparation';
+function orderProgress(order: PurchaseOrder) {
+  const d=data.value; const inv=d.invoices.find(x=>x.purchase_order_id===order.id);
+  const evidence=d.orderEvidence.filter(e=>e.purchase_order_id===order.id);
+  const stages=orderStages({order,quotation:d.quotations.find(q=>q.purchase_order_id===order.id),evidence,
+    deliveries:d.deliveryConfirmations.filter(c=>c.purchase_order_id===order.id),
+    invoice:inv?computeInvoiceWithCustomer(inv,d,d.demoState.simulated_date):null,
+    receiptCount:d.settlementReceipts.filter(r=>r.purchase_order_id===order.id).length,
+    criticalBlockers:deriveOrderBlockers(order.id).filter(b=>b.critical).length,money:formatMYR});
+  return { summary: stageSummary(stages), buyerPo: hasBuyerPo({order,evidence}) };
 }
+const rows=computed(()=>filteredOrders.value.map(order=>({order,...orderProgress(order)})));
+const stageChip:Record<StageState,string>={done:'bg-emerald-50 text-emerald-700',current:'bg-blue-50 text-blue-700',
+  blocked:'bg-rose-50 text-rose-700',todo:'bg-slate-100 text-slate-600',skipped:'bg-slate-100 text-slate-600'};
 function orderAmount(order:PurchaseOrder) {
   const q=data.value.quotations.find(x=>x.purchase_order_id===order.id);
   return q?.amount??purchaseOrderTotal(order.details?.items||[]);
@@ -153,13 +162,13 @@ function customerName(id: string) {
 
 <template>
   <div class="space-y-5">
-    <div v-if="recordPage" class="flex items-center justify-between"><button class="outline-btn" @click="router.push('/orders')">← Back to Purchase Orders</button><div class="flex gap-2" v-if="activeOrder"><button v-if="recordMode==='view'" class="primary-btn" @click="router.push(`/orders/${encodeURIComponent(recordId)}/edit`)">Edit PO</button><button v-else class="outline-btn" @click="router.push(`/orders/${encodeURIComponent(recordId)}/view`)">View Details</button></div></div>
-    <p v-if="recordPage && !activeOrder" class="card p-4 text-rose-700">Purchase order not found.</p>
-    <div v-if="!recordPage" class="flex flex-wrap justify-between items-center gap-3"><p class="text-sm text-slate-600">Review saved orders or start a new PO. Seller verification is required before approval.</p><div class="flex gap-2"><button type="button" class="primary-btn" :disabled="busy" @click="startOrder('create')">+ Create New PO</button><button type="button" class="outline-btn" :disabled="busy" @click="startOrder('upload')">Upload Existing PO</button></div></div>
+    <div v-if="recordPage" class="flex items-center justify-between"><button class="outline-btn" @click="router.push('/orders')">← Back to orders</button><div class="flex gap-2" v-if="activeOrder"><button v-if="recordMode==='view'" class="primary-btn" @click="router.push(`/orders/${encodeURIComponent(recordId)}/edit`)">Edit order</button><button v-else class="outline-btn" @click="router.push(`/orders/${encodeURIComponent(recordId)}/view`)">View Details</button></div></div>
+    <p v-if="recordPage && !activeOrder" class="card p-4 text-rose-700">Order not found.</p>
+    <div v-if="!recordPage" class="flex flex-wrap justify-between items-center gap-3"><p class="text-sm text-slate-600">Start a new order from a chat or by hand, or start from a PO the buyer already sent. The seller confirms every step.</p><div class="flex gap-2"><button type="button" class="primary-btn" :disabled="busy" @click="startOrder('create')">+ New order</button><button type="button" class="outline-btn" :disabled="busy" @click="startOrder('upload')">Start from buyer's PO</button></div></div>
     <p v-if="error" role="alert" class="text-sm text-rose-700">{{error}}</p><p v-if="notice" role="status" class="text-sm text-emerald-700">{{notice}}</p>
-    <section v-if="!recordPage" class="card overflow-hidden" aria-label="Purchase order list"><div class="px-4 py-3 border-b border-slate-100 flex flex-wrap justify-between gap-2"><h2 class="font-semibold">Purchase orders</h2><input v-model="query" aria-label="Search purchase orders" placeholder="Search PO or customer..." class="form-input !mt-0 max-w-xs" /></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-slate-50 text-left text-slate-600"><tr><th class="p-3">PO reference</th><th class="p-3">Customer</th><th class="p-3">Date</th><th class="p-3">Amount</th><th class="p-3">Current stage</th><th class="p-3">Status</th><th class="p-3">Action</th></tr></thead><tbody><tr v-for="order in filteredOrders" :key="order.id" class="border-t"><td class="p-3">{{ order.reference }}</td><td class="p-3">{{ customerName(order.customer_id) }}</td><td class="p-3">{{order.created_at.slice(0,10)}}</td><td class="p-3">{{orderAmount(order)===null?'To be priced':formatMYR(orderAmount(order)!)}}</td><td class="p-3">{{orderStage(order)}}</td><td class="p-3 capitalize">{{ order.status }}</td><td class="p-3"><div class="flex items-center gap-2"><button type="button" class="rounded p-1.5 text-slate-700 hover:bg-slate-100" :aria-label="`View PO ${order.reference}`" title="View PO" @click="router.push(`/orders/${encodeURIComponent(order.id)}/view`)"><Eye class="h-4 w-4" /></button><button type="button" class="rounded p-1.5 text-blue-700 hover:bg-blue-50 disabled:opacity-50" :disabled="busy" :aria-label="`View or edit PO ${order.reference}`" title="View / edit details" @click="router.push(`/orders/${encodeURIComponent(order.id)}/edit`)"><Pencil class="h-4 w-4" /></button><button type="button" class="rounded p-1.5 text-rose-600 hover:bg-rose-50 disabled:opacity-40" :disabled="busy" :aria-label="`Delete PO ${order.reference}`" title="Delete draft PO" @click="removeOrder(order)"><Trash2 class="h-4 w-4" /></button></div></td></tr><tr v-if="!filteredOrders.length"><td colspan="7" class="p-4 text-slate-500">No purchase orders yet. Create one or upload an existing PO.</td></tr></tbody></table></div></section>
-    <div v-if="showEditor && (!recordPage || activeOrder)" class="space-y-5"><div class="flex justify-between items-center"><h2 class="text-lg font-semibold">{{ activeOrder ? 'PO Details — ' + activeOrder.reference : editorMode === 'upload' ? 'Upload Existing PO' : 'Create New PO' }}</h2><button type="button" class="outline-btn" @click="recordPage ? router.push('/orders') : closeEditor()">Close</button></div>
-    <p v-if="editorMode === 'upload' && !activeOrder" class="text-sm text-blue-800 bg-blue-50 rounded p-3">Upload the original PO below to extract its contents. Confirm and save its details; a replacement PO is not generated.</p>
+    <section v-if="!recordPage" class="card overflow-hidden" aria-label="Order list"><div class="px-4 py-3 border-b border-slate-100 flex flex-wrap justify-between gap-2"><h2 class="font-semibold">Orders</h2><input v-model="query" aria-label="Search orders" placeholder="Search order, PO or customer..." class="form-input !mt-0 max-w-xs" /></div><div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-slate-50 text-left text-slate-600"><tr><th class="p-3">Reference</th><th class="p-3">Customer</th><th class="p-3">Date</th><th class="p-3">Amount</th><th class="p-3">Buyer PO</th><th class="p-3">Next step</th><th class="p-3">Approval</th><th class="p-3">Action</th></tr></thead><tbody><tr v-for="{order,summary,buyerPo} in rows" :key="order.id" class="border-t"><td class="p-3 font-medium">{{ order.reference }}</td><td class="p-3">{{ customerName(order.customer_id) }}</td><td class="p-3">{{order.created_at.slice(0,10)}}</td><td class="p-3">{{orderAmount(order)===null?'To be priced':formatMYR(orderAmount(order)!)}}</td><td class="p-3">{{ buyerPo ? 'On file' : '—' }}</td><td class="p-3"><span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap" :class="stageChip[summary.state]">{{ summary.label }}</span></td><td class="p-3 capitalize">{{ order.status }}</td><td class="p-3"><div class="flex items-center gap-2"><button type="button" class="rounded p-1.5 text-slate-700 hover:bg-slate-100" :aria-label="`View order ${order.reference}`" title="View order" @click="router.push(`/orders/${encodeURIComponent(order.id)}/view`)"><Eye class="h-4 w-4" /></button><button type="button" class="rounded p-1.5 text-blue-700 hover:bg-blue-50 disabled:opacity-50" :disabled="busy" :aria-label="`Edit order ${order.reference}`" title="Edit order" @click="router.push(`/orders/${encodeURIComponent(order.id)}/edit`)"><Pencil class="h-4 w-4" /></button><button type="button" class="rounded p-1.5 text-rose-600 hover:bg-rose-50 disabled:opacity-40" :disabled="busy" :aria-label="`Delete order ${order.reference}`" title="Delete draft order" @click="removeOrder(order)"><Trash2 class="h-4 w-4" /></button></div></td></tr><tr v-if="!rows.length"><td colspan="8" class="p-4 text-slate-500">No orders yet. Start a new order, or start from a buyer's PO.</td></tr></tbody></table></div></section>
+    <div v-if="showEditor && (!recordPage || activeOrder)" class="space-y-5"><div class="flex justify-between items-center"><h2 class="text-lg font-semibold">{{ activeOrder ? 'Order — ' + activeOrder.reference : editorMode === 'upload' ? 'Start from buyer\'s PO' : 'New order' }}</h2><button type="button" class="outline-btn" @click="recordPage ? router.push('/orders') : closeEditor()">Close</button></div>
+    <p v-if="editorMode === 'upload' && !activeOrder" class="text-sm text-blue-800 bg-blue-50 rounded p-3">Upload the buyer's PO to read its items and terms. You confirm the details; NudgeWise keeps the original and does not create a replacement PO.</p>
     <section class="card p-4 space-y-3" v-if="!activeOrder"><label class="text-sm font-semibold">Select existing customer <span class="text-rose-700">*</span></label>
       <input v-model="customerSearch" class="form-input !mt-0" type="search" placeholder="Search by customer name, company, phone, or email" aria-label="Search existing customers" />
       <select class="form-input !mt-0" :value="customerId || ''" @change="selectCustomer(($event.target as HTMLSelectElement).value||null)">
@@ -167,14 +176,14 @@ function customerName(id: string) {
       </select><p v-if="!availableCustomers.length" class="text-xs text-slate-500">No matching customers. Try another name or add a new customer.</p><details><summary class="text-blue-700 cursor-pointer text-sm">+ Add a customer or search more options</summary>
       <CustomerIntake :key="intakeKey" :suggestion="suggestion" @selected="selectCustomer" /></details>
     </section>
-    <section v-if="customer && eligibility" class="card p-4 sm:p-5 space-y-4" aria-label="Order eligibility">
+    <section v-if="customer && eligibility" id="stage-order" class="scroll-mt-48 lg:scroll-mt-28 card p-4 sm:p-5 space-y-4" aria-label="Order eligibility">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div><h2 class="text-base font-semibold text-slate-900">{{ customer.name }}</h2><p class="mt-1 text-sm text-slate-600">{{ customer.phone }} · {{ customer.email || 'No billing email' }}</p></div>
         <span class="rounded px-2.5 py-1 text-xs font-medium" :class="eligibility.allowed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'">{{ eligibility.allowed ? 'Eligible for a new order' : 'Order hold' }}</span>
       </div>
       <div v-if="!eligibility.allowed" class="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
         <p class="text-sm font-semibold text-amber-900">Previous disputed invoices require attention</p>
-        <p class="text-sm text-amber-900">Resolve the dispute and settle the required balance, or obtain a seller override for this PO.</p>
+        <p class="text-sm text-amber-900">Resolve the dispute and settle the required balance, or obtain a seller override for this order.</p>
         <ul class="space-y-2 text-sm text-amber-900">
           <li v-for="blocker in eligibility.blockers" :key="blocker.invoice_id"><strong>{{ blocker.invoice_number }}</strong> · {{ formatMYR(blocker.balance) }} outstanding<br />{{ blocker.reason }}</li>
         </ul>
@@ -182,10 +191,10 @@ function customerName(id: string) {
       <div v-if="activeOrder" class="border-t border-slate-100 pt-4 space-y-3">
         <p class="text-sm text-slate-700"><strong>{{ activeOrder.reference }}</strong> · {{ activeOrder.status === 'approved' ? 'Approved' : 'Draft — awaiting approval' }}</p>
         <form v-if="activeOrder.status === 'draft' && (!recordPage || recordMode === 'edit')" class="space-y-3" @submit.prevent="approve">
-          <label v-if="!eligibility.allowed && actor.role === 'seller'" class="block text-sm font-medium text-slate-700">Reason for allowing this order<textarea v-model.trim="reason" required maxlength="500" rows="3" class="form-input" placeholder="Explain why this specific PO can proceed despite the hold." :disabled="busy" /></label>
+          <label v-if="!eligibility.allowed && actor.role === 'seller'" class="block text-sm font-medium text-slate-700">Reason for allowing this order<textarea v-model.trim="reason" required maxlength="500" rows="3" class="form-input" placeholder="Explain why this specific order can proceed despite the hold." :disabled="busy" /></label>
           <p v-if="actor.role !== 'seller'" class="text-sm text-amber-800">Only a seller can approve an order or override. Ask the seller to review this draft.</p>
-          <p v-if="formDirty" class="text-sm text-amber-800">Save the edited PO details before approval.</p>
-          <button type="submit" class="primary-btn" :disabled="busy || formDirty || actor.role !== 'seller' || (!eligibility.allowed && !reason.trim())">{{ eligibility.allowed ? 'Approve order' : 'Approve this PO with override' }}</button>
+          <p v-if="formDirty" class="text-sm text-amber-800">Save the edited order details before approval.</p>
+          <button type="submit" class="primary-btn" :disabled="busy || formDirty || actor.role !== 'seller' || (!eligibility.allowed && !reason.trim())">{{ eligibility.allowed ? 'Approve order' : 'Approve this order with override' }}</button>
         </form>
         <div v-if="activeOrder.override" class="rounded-lg bg-slate-50 p-3 text-sm text-slate-700 space-y-1">
           <p class="font-semibold">Seller override for this order</p>
@@ -198,7 +207,7 @@ function customerName(id: string) {
       <p v-if="notice" role="status" class="text-sm text-emerald-700">{{ notice }}</p>
     </section>
     <OrderWorkspace v-if="activeOrder" :key="activeOrder.id" :order="activeOrder" />
-    <details v-if="activeOrder && (!recordPage || recordMode === 'edit')" class="card p-4"><summary class="font-semibold cursor-pointer">{{activeOrder.status==='approved'?'View original PO details':'Edit PO details'}}</summary>
+    <details v-if="activeOrder && (!recordPage || recordMode === 'edit')" class="card p-4"><summary class="font-semibold cursor-pointer">{{activeOrder.status==='approved'?'View order details':'Edit order details'}}</summary>
      <PurchaseOrderForm :order="activeOrder" :mode="editorMode" :customer="customer" :saving="busy" :saved-revision="savedRevision" @save="saveDraft" @buyer="suggestion=$event" @dirty="formDirty=$event" @screenshot="screenshot=$event" />
     </details>
     <PurchaseOrderForm v-else :mode="editorMode" :customer="customer" :saving="busy" :saved-revision="savedRevision" @save="saveDraft" @buyer="suggestion=$event" @dirty="formDirty=$event" @screenshot="screenshot=$event" />

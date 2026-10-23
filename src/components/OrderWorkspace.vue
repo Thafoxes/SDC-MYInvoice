@@ -9,6 +9,9 @@ import { downloadDocumentPdf } from '@/lib/documentPdf';
 import { saveQuotation,setQuotationDecision,confirmDelivery,issueOrderInvoice,createPaymentClaim,reviewPaymentClaim,
  setOrderCase,resolveOrderCase,uploadOrderEvidence,attachOrderEvidence } from '@/services/commands';
 import type { OrderEvidence } from '@/lib/orderWorkflow';
+import { Check, AlertTriangle, Minus } from 'lucide-vue-next';
+import { orderStages, nextStage, STATE_LABEL } from '@/presentation/orderStages';
+import type { StageKey, StageState } from '@/presentation/orderStages';
 const props=defineProps<{order:PurchaseOrder}>();
 const {data,refreshStore}=useDemoStore();
 const actor=computed(()=>data.value.users.find(u=>u.id===DEMO_SELLER_ID)!);
@@ -34,9 +37,22 @@ const caseForm=reactive({kind:'dispute' as 'dispute'|'missing_document'|'other',
 const resolutionNotes=reactive<Record<string,string>>({});
 const evidenceKind=ref<OrderEvidence['kind']>('chat_screenshot');
 const uploading=ref(false);
-const stageNames=['PO','Quotation','Buyer approval','Invoice','Payment','Receipt'];
-const completed=computed(()=>[true,!!quote.value,quote.value?.status==='accepted',!!invoice.value,
- !!invoiceView.value&&invoiceView.value.total_paid>0,receipts.value.length>0]);
+const sourceLabel:Record<string,string>={manual:'entered by hand',chat_screenshot:'from a chat screenshot',uploaded_po:"from the buyer's PO"};
+const buyerPos=computed(()=>evidence.value.filter(e=>e.kind==='existing_po'));
+const stages=computed(()=>orderStages({order:props.order,quotation:quote.value,evidence:evidence.value,deliveries:delivery.value,
+ invoice:invoiceView.value,receiptCount:receipts.value.length,criticalBlockers:blockers.value.filter(b=>b.critical).length,money:asMoney}));
+const next=computed(()=>nextStage(stages.value));
+const stageCard:Record<StageState,string>={done:'border-emerald-200 bg-emerald-50 text-emerald-900',
+ current:'border-blue-400 bg-blue-50 text-blue-900 ring-1 ring-blue-400',blocked:'border-rose-300 bg-rose-50 text-rose-900',
+ todo:'border-slate-200 bg-white text-slate-500',skipped:'border-dashed border-slate-300 bg-slate-50 text-slate-500'};
+const stageDot:Record<StageState,string>={done:'bg-emerald-600 text-white',current:'bg-blue-600 text-white',
+ blocked:'bg-rose-600 text-white',todo:'bg-slate-100 text-slate-500',skipped:'bg-slate-200 text-slate-500'};
+const sectionFor:Record<StageKey,string>={order:'stage-order',quotation:'stage-quotation',buyer_po:'stage-evidence',
+ delivery:'stage-delivery',invoice:'stage-invoice',payment:'stage-payment',receipt:'stage-payment'};
+function goTo(key:StageKey){
+ if(key==='buyer_po')evidenceKind.value='existing_po';
+ document.getElementById(sectionFor[key])?.scrollIntoView({behavior:'smooth',block:'start'});
+}
 watch(()=>props.order.id,()=>{
  const q=quote.value;qform.reference=q?.reference||`QT-${props.order.reference}`;
  qform.currency=q?.currency||props.order.details?.currency||'MYR';
@@ -74,7 +90,7 @@ async function upload(event:Event){const input=event.target as HTMLInputElement;
 function asMoney(n:number|null|undefined){return `${quote.value?.currency||props.order.details?.currency||'MYR'} ${(n||0).toFixed(2)}`;}
 function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
  const po=props.order;const lines=(kind==='quote'?quote.value?.items:po.details?.items)||[];
- const title=kind==='po'?'DRAFT ORDER / PO FOR BUYER REVIEW':kind==='quote'?'QUOTATION':kind==='invoice'?'INVOICE TRACKING COPY':'PAYMENT RECEIPT';
+ const title=kind==='po'?'ORDER SUMMARY FOR BUYER REVIEW':kind==='quote'?'QUOTATION':kind==='invoice'?'INVOICE TRACKING COPY':'PAYMENT RECEIPT';
  const reference=kind==='po'?po.reference:kind==='quote'?quote.value?.reference:kind==='invoice'?invoice.value?.invoice_number:receipts.value.find(r=>r.id===receiptId)?.receipt_number;
  const sections=[{heading:'Document information',lines:[`Reference: ${reference||'N/A'}`,`Customer: ${customer.value?.name||'N/A'}`,
    `Seller: ${data.value.businesses.find(b=>b.id===DEMO_BUSINESS_ID)?.name||'Seller'}`,`Status: ${kind==='quote'?quote.value?.status:kind==='po'?po.status:'Seller recorded'}`]}];
@@ -91,19 +107,34 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
 }
 </script>
 <template>
- <section class="card p-4 sm:p-6 space-y-6" aria-label="PO progress and documents">
-  <div><div class="flex flex-wrap justify-between items-center gap-2"><h3 class="text-lg font-semibold">Order progress · {{order.reference}}</h3><button class="outline-btn" type="button" @click="download('po')">Download draft PO PDF</button></div>
+ <section class="card p-4 sm:p-6 space-y-6" aria-label="Order progress and documents">
+  <div><div class="flex flex-wrap justify-between items-center gap-2"><h3 class="text-lg font-semibold">Order progress · {{order.reference}}</h3><button class="outline-btn" type="button" @click="download('po')">Download order summary PDF</button></div>
   <p class="text-xs text-slate-500 mt-1">Progress reflects recorded seller decisions. This is not an automatic buyer approval or statutory e-invoice.</p></div>
-  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2" aria-label="Order progress bar">
-   <div v-for="(name,i) in stageNames" :key="name" class="rounded-lg border p-3 text-xs" :class="completed[i]?'bg-emerald-50 border-emerald-200 text-emerald-900':'bg-slate-50 border-slate-200 text-slate-600'">
-    <strong class="block">{{i+1}}. {{name}}</strong><span>{{completed[i]?'Recorded':'Pending'}}</span>
-   </div>
+  <ol class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" aria-label="Order progress">
+   <li v-for="(s,i) in stages" :key="s.key">
+    <button type="button" class="flex h-full w-full flex-col items-stretch justify-start rounded-lg border p-3 text-left transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+     :class="stageCard[s.state]" :aria-current="s.state==='current'?'step':undefined" :title="s.detail" @click="goTo(s.key)">
+     <span class="flex items-center gap-2"><span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold" :class="stageDot[s.state]">
+      <Check v-if="s.state==='done'" class="h-3.5 w-3.5" /><AlertTriangle v-else-if="s.state==='blocked'" class="h-3.5 w-3.5" /><Minus v-else-if="s.state==='skipped'" class="h-3.5 w-3.5" /><template v-else>{{i+1}}</template>
+     </span><strong class="text-sm leading-tight">{{s.name}}</strong></span>
+     <span class="mt-2 block text-xs font-semibold">{{STATE_LABEL[s.state]}}</span>
+     <span v-if="s.state!=='todo'" class="mt-0.5 block text-xs leading-snug opacity-90">{{s.detail}}</span>
+    </button>
+   </li>
+  </ol>
+  <div v-if="next" role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4" :class="next.state==='blocked'?'border-rose-200 bg-rose-50':'border-blue-200 bg-blue-50'">
+   <div><p class="text-xs font-semibold uppercase tracking-wide" :class="next.state==='blocked'?'text-rose-700':'text-blue-700'">{{next.state==='blocked'?'Blocked':'Next step'}} · {{next.name}}</p>
+    <p class="mt-1 text-sm font-medium text-slate-900">{{next.detail}}</p></div>
+   <button type="button" class="primary-btn" @click="goTo(next.key)">Open {{next.name}}</button>
   </div>
+  <p v-else role="status" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900">All stages complete. Documents and history are kept.</p>
   <div class="grid gap-4 sm:grid-cols-2 text-sm rounded-lg bg-slate-50 p-4"><div><p class="font-semibold">Buyer</p><p>{{customer?.name||'Unknown buyer'}}</p><p>{{customer?.phone||'No phone'}} · {{customer?.email||'No email'}}</p></div>
-   <div><p class="font-semibold">Order</p><p>{{order.details?.items?.length||0}} item lines · {{order.source_mode||'existing order'}}</p><p>Seller processing approval: {{order.status}}</p></div></div>
+   <div><p class="font-semibold">Order</p><p>{{order.details?.items?.length||0}} {{(order.details?.items?.length||0)===1?'item line':'item lines'}} · {{sourceLabel[order.source_mode||'manual']}}</p><p>Seller approval: {{order.status==='approved'?'Approved':'Draft'}}</p></div></div>
   <p v-if="error" role="alert" class="text-sm p-3 rounded bg-red-50 text-red-700">{{error}}</p>
   <p v-if="notice" role="status" class="text-sm p-3 rounded bg-emerald-50 text-emerald-800">{{notice}}</p>
-  <div class="rounded-lg border border-slate-200 p-4 space-y-3"><h4 class="font-semibold">Supporting evidence</h4>
+  <div id="stage-evidence" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border border-slate-200 p-4 space-y-3"><h4 class="font-semibold">Buyer's PO and supporting evidence</h4>
+   <p v-if="buyerPos.length" class="rounded bg-emerald-50 p-2 text-sm text-emerald-900">Buyer's PO on file: {{buyerPos.map(e=>e.filename).join(', ')}}</p>
+   <p v-else class="rounded bg-blue-50 p-2 text-sm text-blue-900">No buyer's PO yet. Choose <strong>Original buyer PO</strong> below and upload it. Skip this if the buyer does not use POs.</p>
    <p class="text-xs text-slate-600">Optional original screenshots and documents remain available; uploads are never automatic approval or payment proof.</p>
    <div class="flex flex-wrap gap-2 items-center"><select v-model="evidenceKind" class="form-input !mt-0 w-auto" aria-label="Evidence type">
      <option value="chat_screenshot">Order conversation</option><option value="existing_po">Original buyer PO</option>
@@ -113,7 +144,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
    </div><p v-if="uploading" class="text-xs">Saving evidence…</p>
    <div v-if="evidence.length" class="space-y-1 text-sm"><div v-for="e in evidence" :key="e.id" class="flex justify-between gap-2 border-b py-1"><span>{{e.kind.replace(/_/g,' ')}} · {{e.filename}}</span><a class="text-blue-700 underline" :href="`/api/po-evidence/${e.id}`" target="_blank" rel="noopener">View original</a></div></div>
   </div>
-  <div class="rounded-lg border p-4 space-y-3"><div class="flex justify-between"><h4 class="font-semibold">Quotation</h4><button v-if="quote" class="outline-btn" @click="download('quote')">Download PDF</button></div>
+  <div id="stage-quotation" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><div class="flex justify-between"><h4 class="font-semibold">Quotation</h4><button v-if="quote" class="outline-btn" @click="download('quote')">Download PDF</button></div>
     <p class="text-xs text-slate-600">Confirm prices and terms before saving a quotation. Drafts are not buyer acceptance.</p>
     <div v-if="!quote||quote.status==='draft'" class="space-y-3">
      <div class="grid sm:grid-cols-3 gap-2"><label class="text-xs">Reference<input v-model="qform.reference" class="form-input" maxlength="80" /></label>
@@ -130,8 +161,8 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
      <button class="primary-btn" :disabled="busy" @click="setDecision">Record buyer response</button>
     </div>
   </div>
-  <div class="rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Delivery / fulfilment evidence (optional)</h4>
-    <p class="text-xs text-slate-600">Record acceptance only where required by the agreed terms; a partial delivery flags a discrepancy.</p>
+  <div id="stage-delivery" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Delivery and acceptance</h4>
+    <p class="text-xs text-slate-600">Record the quantity the buyer accepted. Less than ordered creates a blocker that must be resolved before invoicing.</p>
     <div v-if="order.details?.items.length" class="grid sm:grid-cols-2 gap-2"><select v-model="deliveryForm.name" class="form-input !mt-0"><option v-for="line in order.details?.items" :key="line.name" :value="line.name">{{line.name}} (ordered {{line.quantity}})</option></select>
      <input v-model.number="deliveryForm.accepted" type="number" min="0" step="0.001" class="form-input !mt-0" placeholder="Accepted quantity" /></div>
     <input v-model="deliveryForm.note" class="form-input" placeholder="Seller verification / delivery reference" />
@@ -139,13 +170,13 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
     <button class="outline-btn" :disabled="busy||!order.details?.items.length" @click="confirmDeliveryAction">Confirm accepted quantity</button>
     <p v-for="d in delivery" :key="d.id" class="text-xs">{{d.item_name}}: {{d.accepted_quantity}} accepted · {{d.reviewer_note}}</p>
   </div>
-  <div class="rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Invoice</h4>
+  <div id="stage-invoice" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Invoice</h4>
    <div v-if="!invoice"><p class="text-sm text-slate-600">Requires an accepted quotation and no critical blockers.</p>
     <div class="grid sm:grid-cols-3 gap-2"><label class="text-xs">Invoice reference<input v-model="invForm.reference" class="form-input" /></label><label class="text-xs">Issue date<input type="date" v-model="invForm.issue_date" class="form-input" /></label><label class="text-xs">Agreed due date<input type="date" v-model="invForm.due_date" class="form-input" /></label></div>
     <button class="primary-btn" :disabled="busy||quote?.status!=='accepted'" @click="makeInvoice">Create invoice record</button>
    </div><div v-else class="flex items-center flex-wrap gap-3 text-sm"><strong>{{invoice.invoice_number}}</strong><span>{{asMoney(invoice.invoice_amount)}} · {{invoiceView?.status}}</span><button class="outline-btn" @click="download('invoice')">Download invoice PDF</button></div>
   </div>
-  <div class="rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Payment claims &amp; receipts</h4>
+  <div id="stage-payment" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Payment and receipt</h4>
     <p class="text-sm">Outstanding: <strong>{{asMoney(invoiceView?.outstanding_balance)}}</strong> · Evidence alone never verifies a bank transfer.</p>
     <div v-if="invoice && invoiceView && invoiceView.outstanding_balance>0" class="grid sm:grid-cols-3 gap-2"><input v-model.number="claimForm.amount" type="number" min="0.01" step="0.01" class="form-input !mt-0" placeholder="Claimed amount" />
       <input v-model="claimForm.reference" class="form-input !mt-0" placeholder="Payment reference" />

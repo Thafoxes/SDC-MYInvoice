@@ -116,9 +116,9 @@ function money(value: number | null) { return value === null || !Number.isFinite
 </script>
 
 <template>
-  <form class="card min-w-0 p-4 sm:p-6 space-y-6" aria-label="Purchase order details" @submit.prevent="save">
+  <form class="card min-w-0 p-4 sm:p-6 space-y-6" aria-label="Order details" @submit.prevent="save">
     <div class="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 class="text-lg font-semibold">Purchase order details</h2><p class="mt-1 text-sm text-slate-600">Enter the order details manually or extract a buyer conversation. Upload an existing PO in the separate import workflow.</p></div>
+      <div><h2 class="text-lg font-semibold">Order details</h2><p class="mt-1 text-sm text-slate-600">{{ props.mode==='upload' ? "Read the buyer's PO, then check every line before saving." : "Type the items, or read them from a chat screenshot. If the buyer already sent a PO, use Start from buyer's PO instead." }}</p></div>
       <span v-if="locked" class="rounded bg-emerald-50 px-3 py-1 text-sm text-emerald-800">Approved · read only</span>
     </div>
     <div v-if="!locked && props.mode !== 'upload'" class="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
@@ -145,7 +145,7 @@ function money(value: number | null) { return value === null || !Number.isFinite
     <p v-if="notice" role="status" class="text-sm text-blue-800">{{ notice }}</p>
     <p v-if="error" role="alert" class="text-sm text-rose-700">{{ error }}</p>
     <fieldset :disabled="disabled" class="min-w-0 space-y-6">
-      <label class="block text-sm font-medium">{{props.mode==='upload'?'Buyer PO reference':'Draft order / PO reference'}} <span class="text-rose-700">*</span><input v-model.trim="reference" required maxlength="100" class="form-input" /></label>
+      <label class="block text-sm font-medium">{{props.mode==='upload'?'Buyer PO number':'Order reference'}} <span class="text-rose-700">*</span><input v-model.trim="reference" required maxlength="100" class="form-input" /></label>
       <section v-for="group in groups" :key="group.title" class="space-y-3 border-t border-slate-100 pt-4">
         <h3 class="text-sm font-semibold text-slate-900">{{ group.title }}</h3>
         <div class="grid gap-3 sm:grid-cols-2">
@@ -183,8 +183,8 @@ function money(value: number | null) { return value === null || !Number.isFinite
       </section>
       <label v-if="!locked" class="flex items-start gap-2 text-sm"><input v-model="reviewed" type="checkbox" required class="mt-1" /><span>I reviewed the item details and any uploaded original; unpriced items will be priced at quotation.</span></label>
       <p class="text-xs text-slate-600">The document's status and approval names are source information. They do not approve this order in NudgeWise.</p>
-      <p v-if="!props.customer && !locked" class="text-sm text-amber-800">Find or add the buyer above before saving this PO.</p>
-      <button v-if="!locked" type="submit" class="primary-btn" :disabled="!reviewed || !props.customer">{{ props.order ? 'Save PO changes' : 'Save draft PO' }}</button>
+      <p v-if="!props.customer && !locked" class="text-sm text-amber-800">Find or add the buyer above before saving this order.</p>
+      <button v-if="!locked" type="submit" class="primary-btn" :disabled="!reviewed || !props.customer">{{ props.order ? 'Save order changes' : 'Save draft order' }}</button>
     </fieldset>
   </form>
 </template>
