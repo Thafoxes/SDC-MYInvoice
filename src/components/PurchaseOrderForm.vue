@@ -3,14 +3,16 @@ import { computed, reactive, ref, watch } from 'vue';
 import type { Customer, PurchaseOrder, PurchaseOrderDetails } from '@/types';
 import type { CustomerExtraction } from '@/lib/customerOrders';
 import { emptyPurchaseOrderDetails, purchaseOrderLineTotal, purchaseOrderTotal, validatePurchaseOrderDetails } from '@/lib/purchaseOrder';
-import { backendEnabled, extractPurchaseOrderDocument } from '@/services/commands';
+import { backendEnabled, extractPurchaseOrderDocument, extractChatOrder } from '@/services/commands';
+import type { ChatOrderUpload } from '@/services/commands';
 
-const props = defineProps<{ order?: PurchaseOrder; customer?: Customer; saving: boolean; savedRevision: number }>();
-const emit = defineEmits<{ save: [reference: string, details: PurchaseOrderDetails]; buyer: [suggestion: CustomerExtraction]; dirty: [value: boolean] }>();
+const props = defineProps<{ order?: PurchaseOrder; customer?: Customer; saving: boolean; savedRevision: number; mode?: 'create' | 'upload' }>();
+const emit = defineEmits<{ save: [reference: string, details: PurchaseOrderDetails]; buyer: [suggestion: CustomerExtraction]; dirty: [value: boolean]; screenshot: [result: ChatOrderUpload] }>();
 const details = reactive(emptyPurchaseOrderDetails());
 const reference = ref('');
 const reviewed = ref(false);
 const uploading = ref(false);
+const chatWarnings = ref<string[]>([]);
 const error = ref('');
 const notice = ref('');
 const originalName = ref('');
@@ -31,12 +33,12 @@ watch(() => [props.order?.id, props.savedRevision], () => {
   uploading.value = false;
   for (const key of Object.keys(details)) delete (details as unknown as Record<string, unknown>)[key];
   Object.assign(details, emptyPurchaseOrderDetails(), structuredClone(props.order?.details || {}));
-  reference.value = props.order?.reference || '';
+  reference.value = props.order?.reference || `DRAFT-${Date.now().toString().slice(-8)}`;
   reviewed.value = false;
   originalName.value = '';
   originalType.value = '';
   error.value = '';
-  notice.value = '';
+  notice.value = ''; chatWarnings.value = [];
   baseline.value = serialized();
 }, { immediate: true });
 
@@ -75,6 +77,27 @@ async function readPO(event: Event) {
   } finally { if (revision === documentRevision) uploading.value = false; input.value = ''; }
 }
 
+async function readChat(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0]; if (!file) return;
+  uploading.value = true; error.value = ''; notice.value = ''; reviewed.value = false;
+  const revision = ++documentRevision;
+  try {
+    const result = await extractChatOrder(file);
+    if (revision !== documentRevision) return;
+    if (result.items.length) {
+      Object.assign(details, { items: result.items, currency: details.currency || 'MYR', evidence_id: result.evidence.id,
+        document_total: null, ...(result.buyer_name ? { buyer_name: result.buyer_name } : {}) });
+      emit('screenshot', result);
+    }
+    originalName.value = result.evidence.filename;
+    originalType.value = result.evidence.content_type;
+    chatWarnings.value = result.warnings || [];
+    notice.value = result.extraction_error || (result.items.length ? 'Chat items extracted. Check names and quantities; prices remain blank.' : 'No reliable item list extracted. Enter manually.');
+  } catch (e) { error.value = e instanceof Error ? e.message : 'Chat OCR failed'; }
+  finally { uploading.value = false; input.value = ''; }
+}
+
 function useBuyer() {
   emit('buyer', { name: details.buyer_name || null, phone: details.buyer_phone || details.delivery_phone || null,
     email: details.buyer_email || null, address: details.buyer_address || null });
@@ -95,15 +118,22 @@ function money(value: number | null) { return value === null || !Number.isFinite
 <template>
   <form class="card min-w-0 p-4 sm:p-6 space-y-6" aria-label="Purchase order details" @submit.prevent="save">
     <div class="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 class="text-lg font-semibold">Purchase order details</h2><p class="mt-1 text-sm text-slate-600">Upload the original to fill the form, or enter the details manually. Blank fields stay blank.</p></div>
+      <div><h2 class="text-lg font-semibold">Purchase order details</h2><p class="mt-1 text-sm text-slate-600">Enter the order details manually or extract a buyer conversation. Upload an existing PO in the separate import workflow.</p></div>
       <span v-if="locked" class="rounded bg-emerald-50 px-3 py-1 text-sm text-emerald-800">Approved · read only</span>
     </div>
-    <div v-if="!locked" class="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 space-y-2">
+    <div v-if="!locked && props.mode !== 'upload'" class="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
+      <label class="block text-sm font-semibold">Extract requested items from buyer chat screenshot (optional)
+        <input class="mt-2 block w-full text-sm" type="file" accept="image/png,image/jpeg" :disabled="!backendEnabled || disabled" @change="readChat" />
+      </label>
+      <p class="text-xs text-slate-600">AI suggests item names and quantities only. Seller reviews; no buyer approval is inferred.</p>
+      <p v-for="warning in chatWarnings" :key="warning" class="text-xs text-amber-800">{{ warning }}</p>
+    </div>
+    <div v-if="!locked && props.mode === 'upload'" class="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 space-y-2">
       <label class="block text-sm font-semibold">Upload PO image or PDF
         <input type="file" accept="image/png,image/jpeg,application/pdf" class="mt-2 block w-full text-sm" :disabled="!backendEnabled || disabled" @change="readPO" />
       </label>
       <p class="text-xs text-slate-600">PNG, JPG or PDF · up to 10 MB and 5 pages. The original is stored in the database as evidence; OCR suggestions need your review.</p>
-      <p class="text-xs text-slate-600">OCR runs locally. Extracted text is sent to your configured Ollama cloud model to fill the fields.</p>
+      <p class="text-xs text-slate-600">OCR uses the configured Python environment. Field extraction uses the configured local or cloud AI provider.</p>
       <p v-if="!backendEnabled" class="text-sm text-amber-800">Connect the backend to upload and retain evidence. Manual PO entry is available here.</p>
       <p v-if="uploading" role="status" class="text-sm">Saving original and reading the PO… this may take a few minutes.</p>
     </div>
@@ -115,7 +145,7 @@ function money(value: number | null) { return value === null || !Number.isFinite
     <p v-if="notice" role="status" class="text-sm text-blue-800">{{ notice }}</p>
     <p v-if="error" role="alert" class="text-sm text-rose-700">{{ error }}</p>
     <fieldset :disabled="disabled" class="min-w-0 space-y-6">
-      <label class="block text-sm font-medium">Buyer PO reference <span class="text-rose-700">*</span><input v-model.trim="reference" required maxlength="100" class="form-input" /></label>
+      <label class="block text-sm font-medium">{{props.mode==='upload'?'Buyer PO reference':'Draft order / PO reference'}} <span class="text-rose-700">*</span><input v-model.trim="reference" required maxlength="100" class="form-input" /></label>
       <section v-for="group in groups" :key="group.title" class="space-y-3 border-t border-slate-100 pt-4">
         <h3 class="text-sm font-semibold text-slate-900">{{ group.title }}</h3>
         <div class="grid gap-3 sm:grid-cols-2">
@@ -136,7 +166,7 @@ function money(value: number | null) { return value === null || !Number.isFinite
               <td class="p-1"><input v-model="item.name" :aria-label="`Item ${index + 1} description`" required maxlength="240" class="form-input min-w-48" /></td>
               <td class="p-1"><input v-model="item.code" :aria-label="`Item ${index + 1} code`" maxlength="100" class="form-input w-32" /></td>
               <td class="p-1"><input v-model.number="item.quantity" :aria-label="`Item ${index + 1} quantity`" type="number" min="0.001" step="0.001" required class="form-input w-24" /></td>
-              <td class="p-1"><input v-model.number="item.unit_price" :aria-label="`Item ${index + 1} unit price`" type="number" min="0" step="0.01" required class="form-input w-28" /></td>
+              <td class="p-1"><input v-model.number="item.unit_price" :aria-label="`Item ${index + 1} unit price`" type="number" min="0" step="0.01" class="form-input w-28" placeholder="TBC" /></td>
               <td class="p-1"><input v-model.number="item.discount" :aria-label="`Item ${index + 1} discount`" type="number" min="0" step="0.01" required class="form-input w-24" /></td>
               <td class="p-2 tabular-nums">{{ money(purchaseOrderLineTotal(item)) }}</td>
               <td class="p-1"><button type="button" class="text-rose-700 underline" :aria-label="`Remove item ${index + 1}`" @click="details.items.splice(index, 1)">Remove</button></td>
@@ -151,7 +181,7 @@ function money(value: number | null) { return value === null || !Number.isFinite
         </div>
         <p v-if="mismatch" role="alert" class="text-sm text-amber-800">The line items and printed total differ. You can save the draft, but must resolve this before approval.</p>
       </section>
-      <label v-if="!locked" class="flex items-start gap-2 text-sm"><input v-model="reviewed" type="checkbox" required class="mt-1" /><span>I checked the buyer, supplier, currency and line items against the original.</span></label>
+      <label v-if="!locked" class="flex items-start gap-2 text-sm"><input v-model="reviewed" type="checkbox" required class="mt-1" /><span>I reviewed the item details and any uploaded original; unpriced items will be priced at quotation.</span></label>
       <p class="text-xs text-slate-600">The document's status and approval names are source information. They do not approve this order in NudgeWise.</p>
       <p v-if="!props.customer && !locked" class="text-sm text-amber-800">Find or add the buyer above before saving this PO.</p>
       <button v-if="!locked" type="submit" class="primary-btn" :disabled="!reviewed || !props.customer">{{ props.order ? 'Save PO changes' : 'Save draft PO' }}</button>

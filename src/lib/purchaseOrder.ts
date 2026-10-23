@@ -34,11 +34,12 @@ export function validatePurchaseOrderDetails(value: unknown): PurchaseOrderDetai
   result.items = input.items.map((item: PurchaseOrderItem) => {
     if (!item || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 240 || /[\u0000-\u001f\u007f]/.test(item.name)
       || typeof item.code !== 'string' || item.code.length > 100 || /[\u0000-\u001f\u007f]/.test(item.code)) throw new Error('Each item needs a description and a valid item code');
-    if (![item.quantity, item.unit_price, item.discount].every(n => typeof n === 'number' && Number.isFinite(n) && n >= 0)
-      || !item.quantity || item.quantity > 1e9 || !Number.isSafeInteger(Math.round(item.quantity * 1000)) || Math.abs(item.quantity * 1000 - Math.round(item.quantity * 1000)) > 1e-5
-      || [item.unit_price!, item.discount!].some(n => !Number.isSafeInteger(Math.round(n * 100)) || Math.abs(n * 100 - Math.round(n * 100)) > 1e-5)
-      || !Number.isSafeInteger(Math.round(item.quantity * item.unit_price! * 100)) || purchaseOrderLineTotal(item)! < 0)
-      throw new Error('Check item quantity, price and discount (discount is an amount, not a percentage)');
+    if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0 || item.quantity > 1e9
+      || Math.abs(item.quantity * 1000 - Math.round(item.quantity * 1000)) > 1e-5
+      || (item.unit_price !== null && (typeof item.unit_price !== 'number' || !Number.isFinite(item.unit_price) || item.unit_price < 0 || Math.abs(item.unit_price*100-Math.round(item.unit_price*100)) > 1e-5))
+      || (item.discount !== null && (typeof item.discount !== 'number' || !Number.isFinite(item.discount) || item.discount < 0 || Math.abs(item.discount*100-Math.round(item.discount*100)) > 1e-5))
+      || (item.unit_price !== null && item.discount !== null && purchaseOrderLineTotal(item)! < 0))
+      throw new Error('Check item quantity, price and discount; missing prices are allowed on draft orders only');
     return { name: item.name.trim(), code: item.code.trim(), quantity: item.quantity, unit_price: item.unit_price, discount: item.discount };
   });
   if (result.items.length && !result.currency) throw new Error('Confirm the currency before saving line items');

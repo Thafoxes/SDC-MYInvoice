@@ -39,6 +39,8 @@ export interface Invoice {
   business_id: string;
   customer_id: string;
   invoice_number: string;
+  purchase_order_id?: string;
+  quotation_id?: string;
   invoice_amount: number;
   issue_date: string;
   due_date: string;
@@ -82,6 +84,7 @@ export interface PurchaseOrder {
   details?: PurchaseOrderDetails;
   status: 'draft' | 'approved';
   created_at: string;
+  source_mode?: 'manual' | 'chat_screenshot' | 'uploaded_po';
   approved_at?: string;
   approved_by?: string;
   override?: { reason: string; actor: string; approved_at: string; blockers: OrderBlocker[] };

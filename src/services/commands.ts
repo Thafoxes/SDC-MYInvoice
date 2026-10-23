@@ -2,6 +2,7 @@ import { ref } from 'vue';
 import * as actions from '@/lib/actions';
 import * as store from '@/lib/store';
 import * as customerOrders from '@/lib/customerOrders';
+import * as workflow from '@/lib/orderWorkflow';
 import type { PurchaseOrderDetails } from '@/types';
 import { runInvoiceCheck as localCheck } from '@/lib/reminderEngine';
 import { askAiAssistant as localAssistant } from '@/lib/aiService';
@@ -16,7 +17,7 @@ function checkAccess(response: Response) {
     throw new Error('Demo access required. Enter the passcode again.');
   }
 }
-export const integration = ref({ model: 'gemma4:31b', botConfigured: false, pollingError: '', lastPollAt: null as string | null, receivingAccountName: '' });
+export const integration = ref({ model: 'llama3.2:3b', aiMode: 'auto', botConfigured: false, pollingError: '', lastPollAt: null as string | null, receivingAccountName: '' });
 let requestRevision = 0;
 
 export async function refreshServer() {
@@ -60,6 +61,9 @@ export const simulateCustomerResponse = command('simulateCustomerResponse', acti
 export const recordPayment = command('recordPayment', actions.recordPayment);
 export const setCustomerLanguage = command('setCustomerLanguage', actions.setCustomerLanguage);
 export const createCustomer = command('createCustomer', customerOrders.createCustomer);
+export const updateCustomer = command('updateCustomer', customerOrders.updateCustomer);
+export const deleteCustomer = command('deleteCustomer', customerOrders.deleteCustomer);
+export const deletePurchaseOrder = command('deletePurchaseOrder', customerOrders.deletePurchaseOrder);
 export const createPurchaseOrder = command('createPurchaseOrder', customerOrders.createPurchaseOrder);
 export const updatePurchaseOrder = command('updatePurchaseOrder', customerOrders.updatePurchaseOrder);
 export const approvePurchaseOrder = command('approvePurchaseOrder', customerOrders.approvePurchaseOrder);
@@ -93,6 +97,19 @@ export interface PurchaseOrderExtraction {
 export function extractPurchaseOrderDocument(file: File, actorRole = 'seller'): Promise<PurchaseOrderExtraction> {
   return uploadDocument(file, actorRole, '/api/purchase-order-document');
 }
+export const attachOrderEvidence = command('attachOrderEvidence', workflow.attachOrderEvidence);
+export const saveQuotation = command('saveQuotation', workflow.saveQuotation);
+export const setQuotationDecision = command('setQuotationDecision', workflow.setQuotationDecision);
+export const confirmDelivery = command('confirmDelivery', workflow.confirmDelivery);
+export const issueOrderInvoice = command('issueOrderInvoice', workflow.issueOrderInvoice);
+export const createPaymentClaim = command('createPaymentClaim', workflow.createPaymentClaim);
+export const reviewPaymentClaim = command('reviewPaymentClaim', workflow.reviewPaymentClaim);
+export const setOrderCase = command('setOrderCase', workflow.setOrderCase);
+export const resolveOrderCase = command('resolveOrderCase', workflow.resolveOrderCase);
+export interface EvidenceUpload { evidence:{id:string;filename:string;content_type:string;size:number;sha256:string}; extracted_text?:string }
+export interface ChatOrderUpload extends EvidenceUpload {items: import('@/types').PurchaseOrderItem[]; buyer_name:string; warnings:string[]; extracted_text:string; extraction_error?:string}
+export const uploadOrderEvidence = (file:File, role='seller') => uploadDocument(file,role,'/api/order-evidence') as Promise<EvidenceUpload>;
+export const extractChatOrder = (file:File, role='seller') => uploadDocument(file,role,'/api/order-chat') as Promise<ChatOrderUpload>;
 export const runInvoiceCheck = command('runInvoiceCheck', localCheck);
 export const setDemoDate = command('setDemoDate', store.setDemoDate);
 export const resetStore = command('resetStore', store.resetStore);

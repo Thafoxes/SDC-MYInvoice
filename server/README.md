@@ -1,3 +1,7 @@
+## XAMPP MariaDB (new Phase 0 option)
+
+For the integrated Phases 1–6 application, set `DB_CLIENT=mariadb`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` in `.env`. MariaDB mode loads the pre-imported 29-table schema, creates two internal persistence tables, and stores evidence as MariaDB blobs. The 29 tables are transactional read models of the app snapshot for this POC—not the authoritative editing interface. See [../PHASE_0_MARIADB_CONNECTION.md](../PHASE_0_MARIADB_CONNECTION.md). The SQLite notes below apply only when `DB_CLIENT` is unset.
+
 # Local Telegram receipt test
 
 This optional mode connects the Vue demo to a loopback Node API, SQLite, Telegram long polling, Docling OCR and **`gemma4:31b`** through the direct Ollama cloud API. The AI Assistant also uses this model when enabled. Use synthetic receipts and a dedicated test bot.

@@ -10,11 +10,13 @@ const router = createRouter({
   routes: [
     { path: '/', redirect: '/dashboard' },
     { path: '/invoices', name: 'invoices', component: InvoicesView, meta: { title: 'Invoices', subtitle: 'Search invoices and review balances, payments and follow-ups.' } },
+    { path: '/customers/:id/:mode(view|edit)', name: 'customer-record', component: CustomersView, meta: { title: 'Customer details', subtitle: 'View or edit a customer.' } },
+    { path: '/orders/:id/:mode(view|edit)', name: 'order-record', component: OrdersView, meta: { title: 'Purchase order details', subtitle: 'View or edit a purchase order.' } },
     { path: '/customers', name: 'customers', component: CustomersView, meta: { title: 'Customers', subtitle: 'Review customer payment history and follow-up priorities.' } },
-    { path: '/orders', name: 'orders', component: OrdersView, meta: { title: 'Purchase orders', subtitle: 'Check customer eligibility and approve incoming buyer orders.' } },
+    { path: '/orders', name: 'orders', component: OrdersView, meta: { title: 'Purchase orders', subtitle: 'Create orders, review buyer evidence and track progress through payment.' } },
     { path: '/dashboard', name: 'dashboard', component: DashboardView, meta: { title: 'Dashboard', subtitle: "Here's your invoice collection overview." } },
     { path: '/action-center', name: 'action-center', component: ActionCenterView, meta: { title: 'Action Center', subtitle: 'Review reminders, customer responses, and invoice issues requiring your attention.' } },
-    { path: '/ai-assistant', name: 'ai-assistant', component: AiAssistantView, meta: { title: 'AI Invoice Assistant', subtitle: 'Ask questions about invoices and payment follow-ups.' } },
+    { path: '/ai-assistant', name: 'ai-assistant', component: AiAssistantView, meta: { title: 'NudgeWise AI Assistant', subtitle: 'Ask about orders, quotations, invoices, payments, and general topics.' } },
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
   ],
 });

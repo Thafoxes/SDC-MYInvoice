@@ -1,3 +1,5 @@
+> **Phase 0 MariaDB update (23 October 2026):** This project supports `DB_CLIENT=mariadb` for the existing XAMPP `nudgewise_db` database. It stores authoritative app state and evidence in MariaDB and refreshes the relational projection tables. See [PHASE_0_MARIADB_CONNECTION.md](PHASE_0_MARIADB_CONNECTION.md) for required XAMPP settings and limits. Legacy SQLite remains available when `DB_CLIENT` is not set.
+
 # NudgeWise — Invoice Follow-Up Assistant
 
 > A seller-controlled invoice follow-up prototype for Malaysian micro and small businesses. NudgeWise tracks outstanding invoices, prepares reminder drafts, records simulated follow-ups, and explains which customer records need attention.

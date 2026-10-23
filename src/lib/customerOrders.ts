@@ -54,6 +54,46 @@ export function createCustomer(input: CustomerInput, actorName: string, actorRol
   return { success: true, id };
 }
 
+/** Safe demo maintenance: only unreferenced draft orders may be removed. */
+export function deletePurchaseOrder(orderId: string, actorName: string, actorRole: string, businessId = DEMO_BUSINESS_ID): Result {
+  if (!permittedActor(actorName, actorRole, businessId)) return { success:false, error:'Seller or staff authorization required' };
+  const data = getStore();
+  const order = data.purchaseOrders.find(o => o.id === orderId && o.business_id === businessId);
+  if (!order) return { success:false, error:'PO not found' };
+  if (order.status !== 'draft') return { success:false, error:'Only draft POs can be deleted. Keep approved orders for history.' };
+  if (data.invoices.some(i => i.purchase_order_id === orderId) || data.quotations.some(q => q.purchase_order_id === orderId))
+    return { success:false, error:'This PO has quotations or invoices. It cannot be deleted.' };
+  // Preserve evidence and workflow history rather than silently orphaning it.
+  const linked = ['orderEvidence','deliveryConfirmations','orderCases','paymentClaims','settlementReceipts'] as const;
+  if (linked.some(key => (data as unknown as Record<string, any[]>)[key]?.some(item => item.purchase_order_id === orderId)))
+    return { success:false, error:'This PO has supporting records. Resolve or archive it instead.' };
+  update(state => { state.purchaseOrders = state.purchaseOrders.filter(o => o.id !== orderId);
+    state.activityEvents.unshift({id:crypto.randomUUID(),business_id:businessId,invoice_id:null,event_type:'purchase_order_deleted', actor:actorName, actor_role:actorRole,description:`Draft PO ${order.reference} deleted`,metadata:{order_id:orderId},created_at:new Date().toISOString()}); });
+  return { success:true };
+}
+
+export function updateCustomer(customerId: string, input: CustomerInput, actorName: string, actorRole: string, businessId = DEMO_BUSINESS_ID): Result {
+  if (!permittedActor(actorName,actorRole,businessId)) return {success:false,error:'Seller or staff authorization required'};
+  const current=getStore().customers.find(c=>c.id===customerId&&c.business_id===businessId);
+  if(!current) return {success:false,error:'Customer not found'};
+  if(!input || !boundedText(input.name,120) || !input.name.trim() || !boundedText(input.email,254) || (input.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) || (input.address!==undefined && !boundedText(input.address,500))) return {success:false,error:'Check name, email and address'};
+  let phone:string;
+  try {phone=normalizePhone(input.phone);} catch(e){return {success:false,error:(e as Error).message};}
+  if(lookupCustomersByPhone(phone,businessId).some(c=>c.id!==customerId)) return {success:false,error:'Phone number belongs to another customer'};
+  update(data=>{const c=data.customers.find(x=>x.id===customerId)!;c.name=input.name.trim();c.phone=phone;c.email=input.email.trim()||null;c.address=input.address?.trim()||null;
+    data.activityEvents.unshift({id:crypto.randomUUID(),business_id:businessId,invoice_id:null,event_type:'customer_updated',actor:actorName,actor_role:actorRole,description:`Customer ${c.name} updated`,metadata:{customer_id:customerId},created_at:new Date().toISOString()});});
+  return {success:true,id:customerId};
+}
+
+export function deleteCustomer(customerId:string, actorName:string, actorRole:string,businessId=DEMO_BUSINESS_ID):Result {
+  if(!permittedActor(actorName,actorRole,businessId))return {success:false,error:'Seller or staff authorization required'};
+  const data=getStore(); const c=data.customers.find(c=>c.id===customerId&&c.business_id===businessId);
+  if(!c)return {success:false,error:'Customer not found'};
+  if(Object.values(data).some(value=>Array.isArray(value)&&value.some(item=>item && typeof item==='object' && 'customer_id' in item && item.customer_id===customerId && item!==c)))return {success:false,error:'Customer has business history. Deletion is blocked; preserve the records.'};
+  update(state=>{state.customers=state.customers.filter(x=>x.id!==customerId);state.activityEvents.unshift({id:crypto.randomUUID(),business_id:businessId,invoice_id:null,event_type:'customer_deleted',actor:actorName,actor_role:actorRole,description:`Customer ${c.name} deleted`,metadata:{customer_id:customerId},created_at:new Date().toISOString()});});
+  return {success:true};
+}
+
 export function getOrderEligibility(customerId: string, businessId = DEMO_BUSINESS_ID): { allowed: boolean; blockers: OrderBlocker[] } {
   const data = getStore();
   if (!data.customers.some(c => c.id === customerId && c.business_id === businessId)) return { allowed: false, blockers: [] };
@@ -67,7 +107,7 @@ export function getOrderEligibility(customerId: string, businessId = DEMO_BUSINE
   return { allowed: blockers.length === 0, blockers };
 }
 
-export function createPurchaseOrder(customerId: string, reference: string, actorName: string, actorRole: string, businessId = DEMO_BUSINESS_ID, details?: PurchaseOrderDetails): Result {
+export function createPurchaseOrder(customerId: string, reference: string, actorName: string, actorRole: string, businessId = DEMO_BUSINESS_ID, details?: PurchaseOrderDetails, sourceMode: 'manual'|'chat_screenshot'|'uploaded_po' = 'manual'): Result {
   if (!permittedActor(actorName, actorRole, businessId)) return { success: false, error: 'Seller or staff authorization required' };
   if (!getStore().customers.some(c => c.id === customerId && c.business_id === businessId)) return { success: false, error: 'Customer not found for this business' };
   if (!boundedText(reference, 100) || !reference.trim()) return { success: false, error: 'Enter a PO reference (up to 100 characters)' };
@@ -76,9 +116,10 @@ export function createPurchaseOrder(customerId: string, reference: string, actor
   let confirmed: PurchaseOrderDetails | undefined;
   try { if (details !== undefined) confirmed = validatePurchaseOrderDetails(details); } catch (error) { return { success: false, error: (error as Error).message }; }
   const id = crypto.randomUUID();
+  if (!['manual','chat_screenshot','uploaded_po'].includes(sourceMode)) return { success: false, error: 'Invalid order source mode' };
   const now = new Date().toISOString();
   update(data => {
-    data.purchaseOrders.unshift({ id, business_id: businessId, customer_id: customerId, reference: reference.trim(), status: 'draft', created_at: now, ...(confirmed ? { details: confirmed } : {}) });
+    data.purchaseOrders.unshift({ id, business_id: businessId, customer_id: customerId, reference: reference.trim(), status: 'draft', source_mode: sourceMode, created_at: now, ...(confirmed ? { details: confirmed } : {}) });
     data.activityEvents.unshift({ id: crypto.randomUUID(), business_id: businessId, invoice_id: null, event_type: 'purchase_order_received',
       actor: actorName, actor_role: actorRole, description: `Buyer PO ${reference.trim()} recorded; processing approval pending`, metadata: { order_id: id, customer_id: customerId }, created_at: now });
   });
@@ -89,6 +130,7 @@ export function updatePurchaseOrder(orderId: string, reference: string, details:
   if (!permittedActor(actorName, actorRole, businessId)) return { success: false, error: 'Seller or staff authorization required' };
   const order = getStore().purchaseOrders.find(o => o.id === orderId && o.business_id === businessId);
   if (!order || order.status !== 'draft') return { success: false, error: 'Only a draft PO in this business can be edited' };
+  if (getStore().quotations.some(q => q.purchase_order_id === orderId && q.status !== 'draft')) return { success: false, error: 'Order has a sent or approved quotation. Preserve agreement; create a reviewed revision instead.' };
   if (!boundedText(reference, 100) || !reference.trim()) return { success: false, error: 'Enter a PO reference' };
   if (getStore().purchaseOrders.some(o => o.id !== orderId && o.business_id === businessId && o.customer_id === order.customer_id && o.reference.toLowerCase() === reference.trim().toLowerCase())) return { success: false, error: 'Duplicate PO reference for this customer' };
   let confirmed: PurchaseOrderDetails;
