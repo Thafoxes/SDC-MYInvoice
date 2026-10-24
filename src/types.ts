@@ -42,7 +42,7 @@ export interface Customer {
 export interface FinalReceipt {
   number:string; issued_at:string; issued_by:string; verification_note:string; financial_key:string;
   invoice_amount:number; total_debits:number; total_credits:number; total_paid:number;
-  payments:Pick<Payment,'id'|'amount'|'payment_date'|'method'|'reference'>[];
+  payments:Pick<Payment,'id'|'amount'|'payment_date'|'method'|'reference'|'evidence_id'>[];
 }
 export interface Invoice {
   id: string;
@@ -72,6 +72,7 @@ export interface Invoice {
 export interface Payment {
   id: string;
   invoice_id: string;
+  evidence_id?: string;
   business_id: string;
   amount: number;
   payment_date: string;
@@ -96,7 +97,7 @@ export interface PurchaseOrder {
   details?: PurchaseOrderDetails;
   status: 'draft' | 'approved';
   created_at: string;
-  source_mode?: 'manual' | 'chat_screenshot' | 'uploaded_po';
+  source_mode?: 'manual' | 'chat_screenshot' | 'uploaded_po' | 'quick_sale';
   completed_at?: string;
   completed_by?: string;
   completion_key?: string;

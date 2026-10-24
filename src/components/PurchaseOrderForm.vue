@@ -122,14 +122,14 @@ function money(value: number | null) { return value === null || !Number.isFinite
 <template>
   <form class="card min-w-0 p-4 sm:p-6 space-y-6" aria-label="Order details" @submit.prevent="save">
     <div class="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 class="text-lg font-semibold">Order details</h2><p class="mt-1 text-sm text-slate-600">{{ props.mode==='upload' ? "Read the buyer's PO, then check every line before saving." : "Type the items, or read them from a chat screenshot. If the buyer already sent a PO, use Start from buyer's PO instead." }}</p></div>
+      <div><h2 class="text-lg font-semibold">Order details</h2><p class="mt-1 text-sm text-slate-600">{{ props.mode==='upload' ? "Read the buyer's PO, then check every line before saving." : "Type the items, or read them from a chat screenshot or PDF. If the buyer already sent a PO, use Start from buyer's PO instead." }}</p></div>
       <span v-if="locked" class="rounded bg-emerald-50 px-3 py-1 text-sm text-emerald-800">Approved · read only</span>
     </div>
     <div v-if="!locked && props.mode !== 'upload'" class="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
-      <label class="block text-sm font-semibold">Extract requested items from buyer chat screenshot (optional)
-        <input class="mt-2 block w-full text-sm" type="file" accept="image/png,image/jpeg" :disabled="!backendEnabled || disabled" @change="readChat" />
+      <label class="block text-sm font-semibold">Extract requested items from buyer chat screenshot or PDF (optional)
+        <input class="mt-2 block w-full text-sm" type="file" accept="image/png,image/jpeg,application/pdf" :disabled="!backendEnabled || disabled" @change="readChat" />
       </label>
-      <p class="text-xs text-slate-600">AI suggests item names and quantities only. Seller reviews; no buyer approval is inferred.</p>
+      <p class="text-xs text-slate-600">PNG, JPG or PDF · up to 10 MB and 5 pages. AI suggests requested item names and quantities only. Review every item; no buyer approval is inferred.</p>
       <p v-for="warning in chatWarnings" :key="warning" class="text-xs text-amber-800">{{ warning }}</p>
     </div>
     <div v-if="!locked && props.mode === 'upload'" class="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 space-y-2">

@@ -3,6 +3,7 @@ import * as actions from '@/lib/actions';
 import * as store from '@/lib/store';
 import * as customerOrders from '@/lib/customerOrders';
 import * as workflow from '@/lib/orderWorkflow';
+import * as quickSale from '@/lib/quickSale';
 import * as settlement from '@/lib/settlement';
 import * as businessSettings from '@/lib/businessSettings';
 import type { PurchaseOrderDetails } from '@/types';
@@ -64,6 +65,7 @@ export const reviewCustomerPromise = command('reviewCustomerPromise', actions.re
 export const simulateCustomerResponse = command('simulateCustomerResponse', actions.simulateCustomerResponse);
 export const recordPayment = command('recordPayment', actions.recordPayment);
 export const setCustomerLanguage = command('setCustomerLanguage', actions.setCustomerLanguage);
+export const createQuickSale = command('createQuickSale', quickSale.createQuickSale);
 export const issueFinalReceipt = command('issueFinalReceipt', settlement.issueFinalReceipt);
 export const completeOrder = command('completeOrder', settlement.completeOrder);
 export const saveBusinessSettings = command('saveBusinessSettings', businessSettings.saveBusinessSettings);
@@ -120,6 +122,8 @@ export const resolveOrderCase = command('resolveOrderCase', workflow.resolveOrde
 export interface EvidenceUpload { evidence:{id:string;filename:string;content_type:string;size:number;sha256:string}; extracted_text?:string }
 export interface ChatOrderUpload extends EvidenceUpload {items: import('@/types').PurchaseOrderItem[]; buyer_name:string; warnings:string[]; extracted_text:string; extraction_error?:string}
 export const uploadOrderEvidence = (file:File, role='seller') => uploadDocument(file,role,'/api/order-evidence') as Promise<EvidenceUpload>;
+export const extractQuickSaleDocument = (file:File,role='seller') => uploadDocument(file,role,'/api/quick-sale-document') as Promise<ChatOrderUpload>;
+export const uploadPaymentEvidence = (file:File,role='seller') => uploadDocument(file,role,'/api/payment-evidence') as Promise<EvidenceUpload>;
 export const extractChatOrder = (file:File, role='seller') => uploadDocument(file,role,'/api/order-chat') as Promise<ChatOrderUpload>;
 export const runInvoiceCheck = command('runInvoiceCheck', localCheck);
 export const setDemoDate = command('setDemoDate', store.setDemoDate);

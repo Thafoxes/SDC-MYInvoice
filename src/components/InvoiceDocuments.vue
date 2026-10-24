@@ -11,6 +11,7 @@ const {data,refreshStore}=useDemoStore();
 const invoice=computed(()=>data.value.invoices.find(i=>i.id===props.invoiceId));
 const view=computed(()=>invoice.value?computeInvoiceWithCustomer(invoice.value,data.value,data.value.demoState.simulated_date):null);
 const order=computed(()=>data.value.purchaseOrders.find(o=>o.id===invoice.value?.purchase_order_id));
+const proof=computed(()=>data.value.orderEvidence.filter(e=>e.purchase_order_id===invoice.value?.purchase_order_id&&e.business_id===invoice.value?.business_id&&e.kind==='payment_proof'));
 const receiptCurrent=computed(()=>!!invoice.value&&hasCurrentFinalReceipt(invoice.value,data.value));
 const blockers=computed(()=>invoice.value?settlementBlockers(invoice.value,data.value):[]);
 const completionBlockers=computed(()=>order.value?orderCompletionBlockers(order.value.id,data.value):[]);
@@ -33,6 +34,7 @@ async function finish(){if(!order.value||busy.value)return;
  <section v-if="invoice&&view" class="rounded-lg border border-slate-200 p-4 space-y-3" aria-label="Invoice documents and completion">
   <h4 class="text-sm font-semibold">Invoice documents and final receipt</h4>
   <div class="flex flex-wrap gap-2"><button type="button" class="outline-btn" @click="pdf('invoice')">View / print invoice PDF</button><button type="button" class="outline-btn" @click="pdf('invoice',true)">Download invoice PDF</button></div>
+  <div v-if="proof.length" class="space-y-1"><p class="text-xs font-semibold text-slate-600">Payment attachments (supporting evidence only)</p><a v-for="file in proof" :key="file.id" :href="`/api/po-evidence/${file.id}`" target="_blank" rel="noopener" class="block text-sm text-blue-700 underline">View {{file.filename}}</a></div>
   <div v-if="invoice.final_receipt" class="space-y-2"><p class="text-xs text-slate-600">{{invoice.final_receipt.number}} · {{receiptCurrent?'Current settlement':'Previous settlement — balance changed'}}</p><div class="flex flex-wrap gap-2"><button type="button" class="outline-btn" @click="pdf('final_receipt')">View / print final receipt</button><button type="button" class="outline-btn" @click="pdf('final_receipt',true)">Download final receipt</button></div></div>
   <template v-if="!receiptCurrent">
    <p v-if="view.outstanding_balance>0" class="text-sm text-slate-600">Record verified payments for the remaining balance first. Unverified screenshots or claims do not issue a final receipt.</p>

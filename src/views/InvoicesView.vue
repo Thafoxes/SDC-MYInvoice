@@ -11,7 +11,7 @@ import type { CustomerPriority, PriorityLevel } from '@/lib/priorityEngine';
 import { formatMYR, formatDate, sumMoney } from '@/lib/format';
 import { getDerivedLabelChips, formatShortPriorityReason, plural } from '@/presentation/display';
 import type { InvoiceWithCustomer } from '@/types';
-import { useRoute } from 'vue-router';
+import { RouterLink,useRoute } from 'vue-router';
 
 const { data } = useDemoStore();
 const currentUser = computed(() => data.value.users.find(u => u.id === DEMO_SELLER_ID)!);
@@ -44,6 +44,13 @@ function openInvoice(i: InvoiceWithCustomer | null | undefined) {
   selectedId.value = i.id;
   drawerOpen.value = true;
 }
+
+let openedFromQuery='';
+watch(()=>[route.query.invoice,invoices.value],()=>{
+ const id=route.query.invoice;if(typeof id!=='string'){openedFromQuery='';return;}
+ if(id===openedFromQuery)return;const invoice=invoices.value.find(i=>i.id===id);
+ if(invoice){openedFromQuery=id;openInvoice(invoice);}
+},{immediate:true});
 
 // Filters (status can come from the dashboard link, e.g. #/invoices?status=overdue)
 const search = ref('');
@@ -84,6 +91,7 @@ const totals = computed(() => ({
   <div class="space-y-5">
     <div class="flex flex-wrap items-end justify-between gap-2">
       <p class="text-sm text-slate-600">{{ currentBusiness?.name }} · {{ plural(totals.count, 'invoice') }} · {{ formatMYR(totals.outstanding) }} outstanding</p>
+      <RouterLink to="/quick-sale" class="primary-btn">New quick sale / invoice</RouterLink>
     </div>
 
     <!-- Invoice Table Section -->

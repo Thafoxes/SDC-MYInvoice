@@ -210,13 +210,13 @@ export function computeStatus(inv: Invoice, data: StoreData, todayStr: string): 
 }
 
 // ---- Mutation helpers ----
-export function addPayment(invoiceId: string, amount: number, date: string, method: string, reference: string, verificationStatus: Payment['verification_status'] = 'recorded'): void {
+export function addPayment(invoiceId: string, amount: number, date: string, method: string, reference: string, verificationStatus: Payment['verification_status'] = 'recorded', evidenceId?:string): void {
   update((d) => {
     const inv = d.invoices.find((i) => i.id === invoiceId);
     if (!inv) return;
     d.payments.push({
       id: uid('pay'), invoice_id: invoiceId, business_id: inv.business_id,
-      amount, payment_date: date, method, reference: reference || null,
+      amount, payment_date: date, method, reference: reference || null,...(evidenceId?{evidence_id:evidenceId}:{}),
       verification_status: verificationStatus, created_at: new Date().toISOString(),
     });
     // Update status

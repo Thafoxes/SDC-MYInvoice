@@ -57,7 +57,7 @@ The database user needs the permissions required by the adapter's schema setup a
 
 ## OCR and AI
 
-Document extraction runs **local Docling Python**, not the Docling MCP server. Docling uses RapidOCR and exports text to the Node process. The first conversion may download OCR/layout models. Customer and PO uploads accept PDF, PNG and JPEG, up to 10 MiB and five pages.
+Document extraction runs **local Docling Python**, not the Docling MCP server. Docling uses RapidOCR and exports text to the Node process. The first conversion may download OCR/layout models. Customer, PO and quick-sale order extraction accept PDF, PNG and JPEG, up to 10 MiB and five pages. Quick-sale extraction proposes items and explicit prices for seller review. Payment-receipt uploads use a separate evidence-only route: they retain PDF/PNG/JPEG originals up to 10 MiB without OCR or cloud AI.
 
 The configured Ollama model turns OCR text into proposed fields. Cloud mode sends the extracted text to the configured Ollama endpoint. Never put API keys in `VITE_*` variables.
 
@@ -97,6 +97,7 @@ Set `VITE_BACKEND_ENABLED=false`, restart Vite and run `npm run dev` without the
 npm run test:server
 npm run test:settings
 npm run test:settlement
+npm run test:quick-sale
 npm run test:customers
 npm run test:po
 npm run test:workflow

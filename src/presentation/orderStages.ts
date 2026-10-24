@@ -59,13 +59,13 @@ export function orderStages(input: StageInput): OrderStage[] {
     order: input.order.status === 'approved'
       ? { state: 'done', detail: 'Approved by seller' }
       : { state: 'pending', detail: 'Check the items and approve the order' },
-    quotation: !q ? { state: 'pending', detail: 'Prepare the quotation' }
+    quotation: input.order.source_mode==='quick_sale' ? { state:'skipped',detail:'Direct invoice — quotation not required' } : !q ? { state: 'pending', detail: 'Prepare the quotation' }
       : accepted ? { state: 'done', detail: `${q.reference} accepted` }
       : q.status === 'rejected' ? { state: 'blocked', detail: 'Buyer rejected the quotation' }
       : q.status === 'revision_requested' ? { state: 'pending', detail: 'Buyer asked for changes' }
       : q.status === 'sent' ? { state: 'pending', detail: "Waiting for the buyer's answer" }
       : { state: 'pending', detail: 'Draft saved; send it to the buyer' },
-    buyer_po: hasBuyerPo(input) ? { state: 'done', detail: "Buyer's PO on file" }
+    buyer_po: input.order.source_mode==='quick_sale' ? { state:'skipped',detail:'Direct sale — buyer PO not required' } : hasBuyerPo(input) ? { state: 'done', detail: "Buyer's PO on file" }
       : deliveryRecorded || inv ? { state: 'skipped', detail: 'No buyer PO on file' }
       : { state: 'pending', detail: "Upload the buyer's PO, or skip if this buyer doesn't use POs" },
     delivery: short.length

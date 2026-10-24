@@ -1,6 +1,62 @@
-# Customer lookup and purchase-order approval
+# Sales, direct invoices and customer orders
 
-Implemented for the seller proof of concept. Start in **Customers** to find or add a customer, or **Purchase orders** to upload, review, save and approve an incoming buyer PO. It records the buyer's document rather than issuing one.
+Start in **Invoices → New quick sale / invoice** for a small B2B transaction with agreed items and prices. Use **Orders** for sales that need quotation negotiation, an uploaded buyer PO, or a longer delivery workflow. **Customers** lets you find or add the customer in either flow.
+
+## Quick sale / direct invoice (POS or small B2B)
+
+Use this when the customer has agreed the items and prices and you want an invoice immediately. A quotation or buyer-issued PO is not required. The system retains a direct-sale order record for delivery, later payments and adjustments; quotation and buyer-PO steps are explicitly **skipped**, not marked as accepted.
+
+### Start the sale
+
+1. Open **Invoices → New quick sale / invoice**.
+2. Find and select an existing customer, or use **Add Customer** to create one. Anonymous/walk-in customer records are not created automatically.
+3. Check the invoice reference and issue date. Supplier contacts, salesperson and currency come from Settings.
+4. Enter item descriptions, quantities, unit prices and line discounts. A discount is an amount for the whole line, not a percentage. The displayed total is the amount invoiced. Combine repeated descriptions or use distinct descriptions so later delivery review can identify each line.
+5. Choose **Paid immediately** or **Pay later / credit sale**.
+
+### Optional order screenshot / PDF extraction
+
+Use **Read order screenshot or PDF** on the quick-sale form. PNG, JPG and PDF are accepted (10 MB maximum; OCR reads up to five pages). Local Docling extracts text and the configured local/cloud model proposes requested item names, quantities and explicitly shown unit prices/line discounts. Missing prices stay blank. The buyer name is only a suggestion: select or add the correct customer yourself.
+
+Uploading can replace the current item rows after confirmation. Check every proposal against **View original**, enter missing prices, and confirm the company currency. Percentage discounts, taxes and unsupported extra fees need manual review; they are not silently added. Tick the extracted-item review confirmation before issuing the invoice. Editing items resets the review and payment confirmations. Extraction failure keeps the original attachment and a manual-entry path; no sample items or invented successful result is substituted.
+
+The original is linked to the sale only when you issue the invoice. Removing an attachment from the form does not erase an already uploaded original from evidence storage.
+
+### Paid immediately
+
+1. Confirm that all listed goods were handed over and accepted.
+2. Select the payment method, optionally enter a transaction reference, and record the verification source, such as counted cash or a settled credit checked in bank records. Optionally upload a bank-transfer confirmation or card receipt under **Bank transfer / card receipt attachment**.
+3. Tick the funds-received confirmation. A screenshot, pending transfer, unconfirmed card transaction or uncleared cheque is not verification.
+4. Click **Issue invoice, receipt and complete sale**. The whole invoice amount is recorded once, the final receipt is issued, delivery acceptance is recorded and the sale is completed. No quotation is fabricated.
+5. Invoice Details opens automatically. Use **View / print invoice PDF** or **View / print final receipt**. Use the PDF viewer’s print action to print the document.
+
+If funds or goods are not confirmed, use Pay later instead and record the outstanding steps later. Do not select Paid immediately merely because the buyer showed a transfer screenshot.
+
+### Pay later / credit sale
+
+1. Enter the agreed due date (on or after the issue date).
+2. Tick the handover checkbox only if the customer already received all goods; otherwise leave it unchecked.
+3. Click **Issue invoice on agreed terms**. The invoice is issued with its balance outstanding. This creates no payment or receipt, even if payment fields were filled before switching modes.
+4. Later, open the invoice and use **Record verified payment** after checking the funds received. Partial payments remain outstanding until fully settled. Alternatively, record a buyer payment claim and review it using the existing verification workflow.
+5. Once settled, confirm settlement and issue the final receipt. If delivery was not recorded at the sale, open the linked order and record delivery acceptance or resolve its shortfall.
+6. Click **Complete order** once the final receipt, delivery and any holds are resolved. No quotation is required for this direct-sale record.
+
+### Payment receipt images and PDFs
+
+Quick sale accepts optional PNG/JPG/PDF bank-transfer or card-receipt attachments (up to 10 MB). An image preview and **View full attachment** let you check the original. Payment proofs are retained as supporting evidence without running OCR or sending their contents to the cloud model. Adding or replacing one resets the funds-confirmation checkbox; it does not set the invoice to paid or change the amount.
+
+When the sale is issued, the proof is linked to its order and, for Paid immediately, to the recorded payment. It remains accessible from Invoice Details under **Payment attachments** and **Payment History → View attached payment receipt**. Switching to Pay later retains the attachment as unverified supporting evidence and records no payment.
+
+For a later payment, open **Invoice Details → Record verified payment**. Upload a receipt or select an existing payment-proof attachment, choose the payment method (including Card), enter the amount/date/reference, and explicitly confirm the funds check. The saved payment retains the attachment link. The order’s supporting-evidence uploader can also retain a payment proof independently of a payment.
+
+Attachments must belong to the current business and sale. A receipt image or transfer screenshot is never independent proof of settled funds; pending, rejected or reversed transfers must not be recorded as received merely because a file exists.
+
+### Holds, corrections and retries
+
+- Only the seller can issue a quick-sale invoice. Customer dispute/settlement holds still require a specific seller exception reason for this sale; the exception does not clear old invoices or disputes.
+- Saving validates the invoice reference, customer scope, dates, item amounts, and the funds/handover confirmations before adding records. A duplicate invoice reference is rejected to prevent repeated collections. If a request appears to fail, check the invoice list before creating a second sale under another reference.
+- Issued direct-sale items are not editable through a quotation. Use the existing credit-note and debit-note workflows for agreed changes; delivery shortfall credits use the issued item prices. Refund handling is not implemented, so a credit cannot exceed the remaining outstanding balance.
+- This is a seller-recorded demo, not an integrated payment terminal or statutory e-invoice service. The application does not independently confirm a bank transaction. [Seller settings](#seller-settings-and-document-preparer) control the document details.
 
 ## Empty workspace and recovery
 
@@ -93,7 +149,7 @@ For the full project relationships, see [the navigation guide](project-map.md) a
 
 Seller identity remains simulated in this demo. An override is a recorded processing exception, not evidence of buyer acceptance or bank settlement.
 
-## Direct orders, quotations and revisions
+## Orders that use quotations and revisions
 
 A buyer does not need to issue a PO. Choose **Create order**, select the customer, and enter the requested items (or review a chat screenshot). Prices may be blank initially. **Total printed on buyer’s document** is optional: leave it blank when there is no buyer PO. It is a monetary total from a real document, not an item count or quotation number. For example, items worth MYR 760 and a document total entered as MYR 1 differ by MYR 759; correct that field or clear it when there is no document total.
 
@@ -136,3 +192,7 @@ Issuing a receipt does not post a payment. Repeating issuance for the same settl
 The new-order form shows **Our company — supplier / seller** as read-only information from Settings, with an **Edit company settings** link. You no longer need to type the supplier on every order. Direct and chat orders record your company details when saved. Uploaded PO supplier text remains source evidence; the uploaded original is unchanged.
 
 Fresh workspaces start with the editable demo profile **Kedai Maju Jaya Sdn Bhd**, fictional address **12 Jalan Demo, 50000 Kuala Lumpur, Malaysia**, placeholder phone **+60 3-0000 0000**, email **sales@kedaimaju.example**, and **Demo Salesperson**. Settings identifies these contacts as fictional. Existing custom settings are preserved. An untouched “My business” placeholder upgrades to this profile without adding sample customers, orders or payments.
+
+## Extract requested items from chat screenshots or PDFs
+
+Under **Create order → Order details**, use **Extract requested items from buyer chat screenshot or PDF**. PNG, JPG and PDF are accepted, up to 10 MB and five pages. You can upload a PDF export or a PDF containing chat screenshots. The same local Docling OCR and configured AI provider propose requested items and quantities; review them before saving. Original evidence is retained. Extraction does not confirm buyer agreement, prices or payment. For a formal buyer PO, use **Start from buyer’s PO** instead so its document fields can be extracted.

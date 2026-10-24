@@ -71,6 +71,7 @@ export function attachOrderEvidence(poId: string, meta: Omit<OrderEvidence, 'bus
 export function saveQuotation(poId: string, input: Pick<Quotation,'reference'|'items'|'currency'|'payment_terms'|'delivery_terms'|'valid_until'>,
  actor: string, role: string, businessId = DEMO_BUSINESS_ID) {
  seller(actor,role,businessId); const po = orderFor(poId,businessId);
+ if(po.source_mode==='quick_sale')throw Error('Quick sale already has an invoice; use credit/debit notes for adjustments');
  if (!po.details?.items.length || !['draft','approved'].includes(po.status)) throw Error('Save an order with items first');
  if (!input || !validText(input.reference,80) || !input.reference.trim() || !/^[A-Z]{3}$/.test(input.currency)
    || !validText(input.payment_terms,500) || !validText(input.delivery_terms,500) || !validText(input.valid_until,10)
@@ -193,7 +194,7 @@ export function reviewPaymentClaim(claimId:string, verified:boolean,verification
  const paymentId=id();update(d=>{const current=d.paymentClaims.find(x=>x.id===claimId)!;
   Object.assign(current,{status:verified?'verified':'rejected',reviewed_by:actor,reviewed_at:now()});
   if(verified){d.payments.push({id:paymentId,business_id:businessId,invoice_id:claim.invoice_id,amount:claim.amount,
-      payment_date:d.demoState.simulated_date,method:'seller_verified',reference:claim.reference||verificationNote,
+      payment_date:d.demoState.simulated_date,method:'seller_verified',...(claim.evidence_id?{evidence_id:claim.evidence_id}:{}),reference:claim.reference||verificationNote,
       verification_status:'recorded',created_at:now()});
     d.settlementReceipts.push({id:id(),business_id:businessId,purchase_order_id:claim.purchase_order_id,invoice_id:claim.invoice_id,
       payment_id:paymentId,receipt_number:`RCPT-${Date.now().toString().slice(-9)}`,amount:claim.amount,issued_at:now(),issued_by:actor});
@@ -231,8 +232,8 @@ export function deriveOrderBlockers(poId:string):OrderBlocker[]{
      kind:'quantity_mismatch',item_name:item.name,shortfall:item.quantity!-delivery.accepted_quantity-credited,evidence_id:delivery.evidence_id});
  }
  for(const issue of d.orderCases.filter(x=>x.purchase_order_id===poId&&x.status==='open'))out.push({reason:issue.reason,critical:true,source:`Seller-recorded ${issue.kind}`});
- if(!q)out.push({reason:'Quotation not prepared',critical:false,source:'Quotation'});
- else if(q.status!=='accepted')out.push({reason:`Quotation is ${q.status.replace('_',' ')}`,critical:false,source:'Buyer decision'});
+ if(!q&&po.source_mode!=='quick_sale')out.push({reason:'Quotation not prepared',critical:false,source:'Quotation'});
+ else if(q&&q.status!=='accepted')out.push({reason:`Quotation is ${q.status.replace('_',' ')}`,critical:false,source:'Buyer decision'});
  if(invoice?.verification_hold)out.push({reason:'Payment claim awaits verification',critical:true,source:'Payment claim'});
  if(invoice?.dispute_active)out.push({reason:'Invoice is under dispute/hold',critical:true,source:'Invoice review'});
  return out;
@@ -244,7 +245,7 @@ export function deriveOrderBlockers(poId:string):OrderBlocker[]{
 export function issueCreditNote(poId:string,itemName:string,quantity:number,reason:string,actor:string,role:string,businessId=DEMO_BUSINESS_ID){
  seller(actor,role,businessId);const po=orderFor(poId,businessId);
  const q=getStore().quotations.find(x=>x.purchase_order_id===poId&&x.business_id===businessId&&x.status==='accepted');
- if(!q)throw Error('Record buyer acceptance of the quotation first');
+ if(!q&&po.source_mode!=='quick_sale')throw Error('Record buyer acceptance of the quotation first');
  if((po.details?.items.filter(i=>i.name===itemName).length||0)!==1)throw Error('Choose one order line');
  const line=po.details!.items.find(i=>i.name===itemName)!;
  const delivery=getStore().deliveryConfirmations.find(x=>x.purchase_order_id===poId&&x.item_name===itemName&&x.business_id===businessId);
@@ -253,7 +254,7 @@ export function issueCreditNote(poId:string,itemName:string,quantity:number,reas
  if(!Number.isFinite(quantity)||quantity<=0)throw Error('Enter the quantity to credit');
  if(quantity>shortfall)throw Error(`Credit quantity cannot exceed the shortfall (${shortfall})`);
  if(!validText(reason,500)||!reason.trim())throw Error('Give the reason for the credit note');
- const quoted=q.items.find(i=>i.name===itemName);
+ const quoted=(q?.items||po.details?.items||[]).find(i=>i.name===itemName);
  if(!quoted||!Number.isFinite(quoted.unit_price)||!quoted.quantity)throw Error('The accepted quotation has no price for this item');
  const netUnit=(quoted.unit_price!*quoted.quantity-(quoted.discount||0))/quoted.quantity;
  const amount=round2(quantity*netUnit);

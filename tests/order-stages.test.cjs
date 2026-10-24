@@ -82,3 +82,9 @@ test('a paid invoice and payment receipt alone do not complete an order',async()
  assert.equal(stageSummary(orderStages({...delivered,completionConfirmed:true})).label,'Completed');
  assert.notEqual(stageSummary(orderStages({...delivered,completionConfirmed:true,invoice:{...invoice,verification_hold:true}})).label,'Completed');
 });
+
+test('quick sales skip quotation and buyer PO without fabricating acceptance',async()=>{
+ const {orderStages,stageSummary}=await mod;
+ const input={...base,order:{...base.order,status:'approved',source_mode:'quick_sale'},invoice:{invoice_number:'INV-POS',outstanding_balance:0,total_paid:500,dispute_active:false,verification_hold:false},deliveries:[{item_name:'Kuih box',accepted_quantity:100}],finalReceiptIssued:true,completionConfirmed:true};
+ const stages=orderStages(input);assert.equal(stages.find(s=>s.key==='quotation').state,'skipped');assert.equal(stages.find(s=>s.key==='buyer_po').state,'skipped');assert.equal(stageSummary(stages).label,'Completed');
+});

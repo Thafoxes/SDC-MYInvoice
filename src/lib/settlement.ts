@@ -28,7 +28,7 @@ export function orderCompletionBlockers(orderId:string,data=getStore()):string[]
  const inv=data.invoices.find(i=>i.purchase_order_id===orderId&&i.business_id===order.business_id);
  const reasons=inv?settlementBlockers(inv,data):['Create an invoice first.'];
  if(order.status!=='approved')reasons.push('Approve order processing first.');
- if(!data.quotations.some(q=>q.purchase_order_id===orderId&&q.business_id===order.business_id&&q.status==='accepted'))reasons.push('Record buyer acceptance of the quotation.');
+ if(order.source_mode!=='quick_sale'&&!data.quotations.some(q=>q.purchase_order_id===orderId&&q.business_id===order.business_id&&q.status==='accepted'))reasons.push('Record buyer acceptance of the quotation.');
  if(inv&&!hasCurrentFinalReceipt(inv,data))reasons.push('Issue the final receipt for the current settled balance.');
  if(!order.details?.items.length)reasons.push('Record the agreed order items.');
  for(const item of order.details?.items||[]){
@@ -39,20 +39,23 @@ export function orderCompletionBlockers(orderId:string,data=getStore()):string[]
  for(const blocker of deriveOrderBlockers(orderId).filter(b=>b.critical))if(!reasons.includes(blocker.reason))reasons.push(blocker.reason);
  return reasons;
 }
+export function finalReceiptSnapshot(inv:Invoice,data:StoreData,note:string,actor:string,issuedAt=new Date().toISOString()) {
+ const totals=computeInvoiceWithCustomer(inv,data,data.demoState.simulated_date);
+ return {number:`FR-${crypto.randomUUID()}`,issued_at:issuedAt,issued_by:actor,verification_note:note.trim(),financial_key:financialKey(inv,data),
+  invoice_amount:inv.invoice_amount,total_debits:totals.total_debits||0,total_credits:totals.total_credits,total_paid:totals.total_paid,
+  payments:data.payments.filter(p=>p.invoice_id===inv.id&&p.business_id===inv.business_id&&p.verification_status==='recorded').map(p=>({id:p.id,amount:p.amount,payment_date:p.payment_date,method:p.method,reference:p.reference,...(p.evidence_id?{evidence_id:p.evidence_id}:{})}))};
+}
 export function issueFinalReceipt(invoiceId:string,note:string,actor:string,role:string,businessId=DEMO_BUSINESS_ID){
  authorize(actor,role,businessId);const data=getStore();const inv=data.invoices.find(i=>i.id===invoiceId&&i.business_id===businessId);
  if(!inv)throw Error('Invoice not found for this business');
  if(typeof note!=='string'||!note.trim()||note.length>1000||/[\x00-\x1f\x7f]/.test(note))throw Error('Enter how you verified funds received or a credit-only settlement.');
  const blockers=settlementBlockers(inv,data);if(blockers.length)throw Error(blockers[0]);
  if(hasCurrentFinalReceipt(inv,data))return {success:true,number:inv.final_receipt!.number};
- const totals=computeInvoiceWithCustomer(inv,data,data.demoState.simulated_date);
  const payments=data.payments.filter(p=>p.invoice_id===inv.id&&p.business_id===businessId&&p.verification_status==='recorded');
- const issuedAt=new Date().toISOString();const number=`FR-${crypto.randomUUID()}`;
+ const issuedAt=new Date().toISOString();const receipt=finalReceiptSnapshot(inv,data,note,actor,issuedAt);const number=receipt.number;
  update(d=>{
   const invoice=d.invoices.find(i=>i.id===invoiceId)!;const previous=invoice.final_receipt;
-  invoice.final_receipt={number,issued_at:issuedAt,issued_by:actor,verification_note:note.trim(),financial_key:financialKey(inv,data),
-   invoice_amount:inv.invoice_amount,total_debits:totals.total_debits||0,total_credits:totals.total_credits,total_paid:totals.total_paid,
-   payments:payments.map(p=>({id:p.id,amount:p.amount,payment_date:p.payment_date,method:p.method,reference:p.reference}))};
+  invoice.final_receipt=receipt;
   if(inv.purchase_order_id)for(const payment of payments)if(!d.settlementReceipts.some(r=>r.payment_id===payment.id))
    d.settlementReceipts.push({id:crypto.randomUUID(),business_id:businessId,purchase_order_id:inv.purchase_order_id,invoice_id:invoiceId,payment_id:payment.id,
     receipt_number:`RCPT-${crypto.randomUUID()}`,amount:payment.amount,issued_at:issuedAt,issued_by:actor});

@@ -3,6 +3,7 @@ const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const customerOrders = require('../.server-build/lib/customerOrders.js');
 const workflow = require('../.server-build/lib/orderWorkflow.js');
+const {createQuickSale}=require('../.server-build/lib/quickSale.js');
 const settlement = require('../.server-build/lib/settlement.js');
 const businessSettings = require('../.server-build/lib/businessSettings.js');
 const { DatabaseSync } = require('node:sqlite');
@@ -80,6 +81,18 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
   monitor();
 
   const commands = {
+    createQuickSale(input,actor,role,scope){
+      if(scope!==businessId)throw Error('Business mismatch');
+      if(!input||typeof input!=='object'||Array.isArray(input))throw Error('Invalid quick sale');
+      const checked={...input};
+      for(const key of ['order_evidence','payment_evidence'])if(input[key]!=null){
+        if(typeof input[key]?.id!=='string')throw Error('Invalid attachment ID');
+        const row=db.prepare('SELECT id, filename, content_type, sha256 FROM po_evidence WHERE id = ? AND business_id = ?').get(input[key]?.id,businessId);
+        if(!row)throw Error('Attachment not found in this workspace');
+        checked[key]={id:row.id,filename:row.filename,mime_type:row.content_type};
+      }
+      return createQuickSale(checked,actor,role,businessId);
+    },
     ...Object.fromEntries(['issueFinalReceipt','completeOrder'].map(name=>[name,(...args)=>{
       if(args[args.length-1]!==businessId)throw Error('Business mismatch');
       return settlement[name](...args);
@@ -147,7 +160,7 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
         const bytes = fs.readFileSync(path.join(directory, `${r.id}.${r.extension}`));
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${r.id}.${r.extension}"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end(bytes);
       }
-      if (req.method === 'POST' && ['/api/customer-document', '/api/purchase-order-document', '/api/order-chat', '/api/order-evidence'].includes(req.url)) {
+      if (req.method === 'POST' && ['/api/customer-document', '/api/purchase-order-document', '/api/order-chat', '/api/quick-sale-document', '/api/payment-evidence', '/api/order-evidence'].includes(req.url)) {
         if (req.headers['x-nudgewise-local'] !== '1' || !req.headers['content-type']?.startsWith('application/json')) return json(403, { error: 'Local JSON upload required' });
         const maxBytes = 10 * 1024 * 1024;
         const maxBody = 4 * Math.ceil(maxBytes / 3) + 4096;
@@ -166,9 +179,10 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
         if (bytes.length > maxBytes) return json(413, { error: 'Document exceeds 10 MB' });
         const extension = integrations.fileExtension(bytes);
         const isPO = req.url === '/api/purchase-order-document';
-        const isChat = req.url === '/api/order-chat';
-        const isEvidence = req.url === '/api/order-evidence';
-        if (isChat && extension === 'pdf') return json(400, { error: 'Chat screenshots must be JPG or PNG' });
+        const isQuickSale = req.url === '/api/quick-sale-document';
+        const isChat = req.url === '/api/order-chat' || isQuickSale;
+        const isPaymentEvidence = req.url === '/api/payment-evidence';
+        const isEvidence = req.url === '/api/order-evidence' || isPaymentEvidence;
         let evidence;
         if (isPO || isChat || isEvidence) {
           const hash = createHash('sha256').update(bytes).digest('hex');
@@ -184,11 +198,11 @@ function createBackend({ directory = path.resolve('.local-data'), api = integrat
           fs.writeFileSync(filename, bytes, { mode: 0o600 });
           if (isEvidence) {
             let extracted_text = '';
-            try { extracted_text = (await api.readDocument(filename)).slice(0, 4000); } catch { /* Evidence is still saved when OCR is unavailable. */ }
+            try { if(!isPaymentEvidence)extracted_text = (await api.readDocument(filename)).slice(0, 4000); } catch { /* Evidence is still saved when OCR is unavailable. */ }
             result = { evidence, extracted_text };
           }
           else if (isChat) {
-            try { result = { ...(await api.extractOrderChat(filename)), evidence }; }
+            try { result = { ...(await (isQuickSale?api.extractQuickSaleOrder(filename):api.extractOrderChat(filename))), evidence }; }
             catch (error) { result = { items: [], buyer_name: '', warnings: ['AI/OCR extraction unavailable. Enter items manually.'], evidence, extraction_error: error.message }; }
           }
           else if (isPO) {

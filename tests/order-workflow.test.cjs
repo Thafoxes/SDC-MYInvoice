@@ -30,8 +30,8 @@ function command(backend,name,args){return new Promise(resolve=>{
  const req=Readable.from([JSON.stringify({name,args})]);Object.assign(req,{method:'POST',url:'/api/command',headers:{host:'127.0.0.1:8787','content-type':'application/json','x-nudgewise-local':'1'}});
  let status;const res={writeHead:code=>{status=code;},end:body=>resolve({status,result:JSON.parse(body)})};backend.server.emit('request',req,res);
 });}
-function upload(backend,url,bytes){return new Promise(resolve=>{
- const req=Readable.from([JSON.stringify({name:'chat.png',content:bytes.toString('base64'),actorRole:'seller'})]);
+function upload(backend,url,bytes,name='chat.png'){return new Promise(resolve=>{
+ const req=Readable.from([JSON.stringify({name,content:bytes.toString('base64'),actorRole:'seller'})]);
  Object.assign(req,{method:'POST',url,headers:{host:'127.0.0.1:8787','content-type':'application/json','x-nudgewise-local':'1'}});
  let status;const res={writeHead:code=>{status=code;},end:body=>resolve({status,result:JSON.parse(body)})};backend.server.emit('request',req,res);
 });}
@@ -140,4 +140,17 @@ test('buyer request can be revised and agreement can use optional attached evide
  workflow.setQuotationDecision(q.id,'accepted','',evidenceId,...actor);
  assert.equal(core.getStore().quotations[0].buyer_decision_evidence_id,evidenceId);
  assert.throws(()=>quotation(orderId),/Accepted quotations/);
+});
+
+test('buyer chat PDFs use the item extraction path and retain original PDF evidence',async t=>{
+ const {backend}=fixture(t);
+ const bytes=fs.readFileSync(path.join(__dirname,'fixtures/transfer-receipt.pdf'));
+ const uploaded=await upload(backend,'/api/order-chat',bytes,'buyer-chat.pdf');
+ assert.equal(uploaded.status,200);
+ assert.equal(uploaded.result.result.items[0].quantity,50);
+ const evidence=uploaded.result.result.evidence;
+ assert.equal(evidence.content_type,'application/pdf');assert.equal(evidence.filename,'buyer-chat.pdf');
+ const stored=backend.db.prepare('SELECT * FROM po_evidence WHERE id = ? AND business_id = ?').get(evidence.id,'biz-001');
+ assert.deepEqual(Buffer.from(stored.bytes),bytes);
+ assert.equal(core.getStore().orderEvidence.length,0,'extraction still requires seller review and explicit attachment');
 });

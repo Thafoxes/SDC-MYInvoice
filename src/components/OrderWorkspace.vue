@@ -7,7 +7,7 @@ import { deriveOrderBlockers } from '@/lib/orderWorkflow';
 import { purchaseOrderTotal } from '@/lib/purchaseOrder';
 import { downloadDocumentPdf, documentContactSections } from '@/lib/documentPdf';
 import { saveQuotation,copyQuotationToOrder,setQuotationDecision,confirmDelivery,issueOrderInvoice,createPaymentClaim,reviewPaymentClaim,
- setOrderCase,resolveOrderCase,uploadOrderEvidence,attachOrderEvidence,issueCreditNote,acceptDeliveryShortfall,issueDebitNote } from '@/services/commands';
+ setOrderCase,resolveOrderCase,uploadOrderEvidence,uploadPaymentEvidence,attachOrderEvidence,issueCreditNote,acceptDeliveryShortfall,issueDebitNote } from '@/services/commands';
 import type { OrderEvidence } from '@/lib/orderWorkflow';
 import { Check, AlertTriangle, Minus, FileText } from 'lucide-vue-next';
 import InvoiceDocuments from '@/components/InvoiceDocuments.vue';
@@ -48,7 +48,7 @@ const caseForm=reactive({kind:'dispute' as 'dispute'|'missing_document'|'other',
 const resolutionNotes=reactive<Record<string,string>>({});
 const evidenceKind=ref<OrderEvidence['kind']>('chat_screenshot');
 const uploading=ref(false);
-const sourceLabel:Record<string,string>={manual:'entered by hand',chat_screenshot:'from a chat screenshot',uploaded_po:"from the buyer's PO"};
+const sourceLabel:Record<string,string>={quick_sale:'direct invoice / quick sale',manual:'entered by hand',chat_screenshot:'from a chat screenshot',uploaded_po:"from the buyer's PO"};
 const buyerPos=computed(()=>evidence.value.filter(e=>e.kind==='existing_po'));
 const stages=computed(()=>orderStages({order:props.order,quotation:quote.value,evidence:evidence.value,deliveries:delivery.value,
  creditNotes:creditNotes.value,invoice:invoiceView.value,receiptCount:receipts.value.length,finalReceiptIssued:!!invoice.value&&hasCurrentFinalReceipt(invoice.value,data.value),completionConfirmed:!!props.order.completed_at&&props.order.completion_key===invoice.value?.final_receipt?.financial_key,criticalBlockers:blockers.value.filter(b=>b.critical).length,money:asMoney}));
@@ -94,7 +94,7 @@ function addCase(){void run(()=>setOrderCase(props.order.id,caseForm.kind,caseFo
 function resolveCase(id:string){void run(()=>resolveOrderCase(id,resolutionNotes[id]||'',...args()));}
 async function upload(event:Event,kind:OrderEvidence['kind']=evidenceKind.value,selectForBuyer=false){const input=event.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;
  uploading.value=true;error.value='';notice.value='';try{
-  const result=await uploadOrderEvidence(file);
+  const result=await (kind==='payment_proof'?uploadPaymentEvidence:uploadOrderEvidence)(file);
   await attachOrderEvidence(props.order.id,{id:result.evidence.id,filename:result.evidence.filename,
    mime_type:result.evidence.content_type,kind,extracted_text:result.extracted_text},...args());
   if(selectForBuyer)buyerEvidence.value=result.evidence.id;
@@ -117,7 +117,7 @@ type Resolution={mode:''|'deliver'|'credit'|'keep';qty:number|null;reason:string
 const resolution=reactive<Record<string,Resolution>>({});
 function res(item:string):Resolution{return resolution[item]??=({mode:'',qty:null,reason:''});}
 function choose(item:string,mode:Resolution['mode'],shortfall:number){const r=res(item);r.mode=mode;if(mode==='credit'&&!r.qty)r.qty=shortfall;}
-function netUnit(item:string){const line=quote.value?.items.find(i=>i.name===item);
+function netUnit(item:string){const line=(quote.value?.items||props.order.details?.items||[]).find(i=>i.name===item);
  if(!line||line.unit_price==null||!line.quantity)return null;return (line.unit_price*line.quantity-(line.discount||0))/line.quantity;}
 function creditPreview(item:string){const u=netUnit(item),q=Number(res(item).qty);return u!==null&&q>0?Math.round(q*u*100)/100:null;}
 function deliverRest(item:string,shortfall:number){const d=delivery.value.find(x=>x.item_name===item);
@@ -178,7 +178,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
   <p v-if="notice" role="status" class="text-sm p-3 rounded bg-emerald-50 text-emerald-800">{{notice}}</p>
   <div id="stage-evidence" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border border-slate-200 p-4 space-y-3"><h4 class="font-semibold">Buyer's PO and supporting evidence</h4>
    <p v-if="buyerPos.length" class="rounded bg-emerald-50 p-2 text-sm text-emerald-900">Buyer's PO on file: {{buyerPos.map(e=>e.filename).join(', ')}}</p>
-   <p v-else class="rounded bg-blue-50 p-2 text-sm text-blue-900">No buyer's PO yet. Choose <strong>Original buyer PO</strong> below and upload it. Skip this if the buyer does not use POs.</p>
+   <p v-else-if="order.source_mode!=='quick_sale'" class="rounded bg-blue-50 p-2 text-sm text-blue-900">No buyer's PO yet. Choose <strong>Original buyer PO</strong> below and upload it. Skip this if the buyer does not use POs.</p>
    <BlockerRequest v-if="needsBuyerPo" :facts="facts('missing_po')" :phone="customer?.phone" :lang="buyerLang" />
    <p class="text-xs text-slate-600">Optional original screenshots and documents remain available; uploads are never automatic approval or payment proof.</p>
    <div class="flex flex-wrap gap-2 items-center"><select v-model="evidenceKind" class="form-input !mt-0 w-full sm:w-auto" aria-label="Evidence type">
@@ -189,7 +189,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
    </div><p v-if="uploading" class="text-xs">Saving evidence…</p>
    <div v-if="evidence.length" class="space-y-1 text-sm"><div v-for="e in evidence" :key="e.id" class="flex justify-between gap-2 border-b py-1"><span>{{e.kind.replace(/_/g,' ')}} · {{e.filename}}</span><a class="text-blue-700 underline" :href="`/api/po-evidence/${e.id}`" target="_blank" rel="noopener">View original</a></div></div>
   </div>
-  <div id="stage-quotation" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><div class="flex justify-between"><h4 class="font-semibold">Quotation</h4><button v-if="quote" class="outline-btn" @click="download('quote')">Download PDF</button></div>
+  <div v-if="order.source_mode!=='quick_sale'" id="stage-quotation" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><div class="flex justify-between"><h4 class="font-semibold">Quotation</h4><button v-if="quote" class="outline-btn" @click="download('quote')">Download PDF</button></div>
     <p class="text-xs text-slate-600">Copy items from the order / uploaded PO, then edit names, quantities, prices and terms until the buyer agrees. Saving revisions returns the quotation to draft. Acceptance copies agreed items and terms into the order; changed processing approvals must be reviewed again.</p>
     <button v-if="quote?.status==='accepted'&&!invoice&&!delivery.length" class="outline-btn" :disabled="busy" @click="run(()=>copyQuotationToOrder(quote!.id,...args()))">Copy agreed quotation to order</button>
     <div v-if="!quote||quote.status!=='accepted'" class="space-y-3">

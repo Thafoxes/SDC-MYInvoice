@@ -56,7 +56,7 @@ function projectState(state, evidenceRows = []) {
       const credited=state.creditNotes.filter(n=>n.purchase_order_id===po.id&&n.item_name===item.name).reduce((sum,n)=>sum+n.quantity,0);
       return !!delivery && (delivery.accepted_quantity+credited>=item.quantity||!!delivery.shortfall_accepted_at);
     });
-    const completed=!!po.completed_at && settled && deliveryComplete && q?.status==='accepted' && po.status==='approved' && hasCurrentFinalReceipt(issuedInvoice,state) && po.completion_key===receipt?.financial_key;
+    const completed=!!po.completed_at && settled && deliveryComplete && (po.source_mode==='quick_sale'||q?.status==='accepted') && po.status==='approved' && hasCurrentFinalReceipt(issuedInvoice,state) && po.completion_key===receipt?.financial_key;
     const cases = state.orderCases.filter(c => c.purchase_order_id === po.id && c.status === 'open');
     const buyerDecision = q?.status === 'accepted' ? 'accepted' : q?.status === 'rejected' ? 'rejected' : q?.status === 'revision_requested' ? 'revision_requested' : 'not_requested';
     const lines = details.items || [];
@@ -65,7 +65,7 @@ function projectState(state, evidenceRows = []) {
     add('purchase_orders', {
       id:po.id,business_id:po.business_id,customer_id:po.customer_id,
       order_reference:po.reference,po_number:po.source_mode === 'uploaded_po' ? po.reference : null,
-      source_mode:po.source_mode||'manual', document_kind:po.source_mode==='uploaded_po'?'buyer_issued_po':'draft_po',
+      source_mode:po.source_mode||'manual', document_kind:po.source_mode==='uploaded_po'?'buyer_issued_po':po.source_mode==='quick_sale'?'direct_sale':'draft_po',
       status:po.status,buyer_approval_status:buyerDecision, order_date:day(details.order_date),
       requested_delivery_date:day(details.delivery_date),currency:details.currency||'MYR',document_total:total,
       buyer_details_snapshot:json({name:details.buyer_name,address:details.buyer_address,phone:details.buyer_phone,email:details.buyer_email}),
@@ -93,7 +93,7 @@ function projectState(state, evidenceRows = []) {
     ];
     for (const [stage, complete] of milestones) add('order_stages', {
       id:fixedId(`stage:${po.id}:${stage}`), business_id:po.business_id,purchase_order_id:po.id,
-      stage_code:stage,stage_status:cases.length && ['invoice','payment'].includes(stage)?'blocked':complete?'completed':'not_started',
+      stage_code:stage,stage_status:po.source_mode==='quick_sale'&&['quotation','buyer_approval'].includes(stage)?'skipped':cases.length && ['invoice','payment'].includes(stage)?'blocked':complete?'completed':'not_started',
       completed_at:complete?dt((stage==='po'?po.created_at:stage==='quotation'?q?.updated_at:stage==='buyer_approval'?q?.updated_at:stage==='payment'?associatedPayments.at(-1)?.created_at:stage==='receipt'?po.completed_at:issuedInvoice?.created_at)):null,
       summary: cases.length ? 'Open seller review case' : null,
     });
@@ -121,7 +121,8 @@ function projectState(state, evidenceRows = []) {
       invoice_amount:inv.invoice_amount,document_status:inv.status,dispute_active:bool(inv.dispute_active),
       settlement_required:bool(inv.settlement_required),verification_hold:bool(inv.verification_hold),created_at:dt(inv.created_at)});
     const q=quotations.get(inv.quotation_id);
-    if(q) q.items.forEach((line,i)=>add('invoice_items',{id:fixedId(`invitem:${inv.id}:${i}`),business_id:inv.business_id,invoice_id:inv.id,
+    const invoiceLines=q?.items||orders.get(inv.purchase_order_id)?.details?.items||[];
+    invoiceLines.forEach((line,i)=>add('invoice_items',{id:fixedId(`invitem:${inv.id}:${i}`),business_id:inv.business_id,invoice_id:inv.id,
       line_no:i+1,item_name:line.name,item_code:line.code||null,quantity:num(line.quantity)||0,unit_price:num(line.unit_price)||0,
       discount_amount:num(line.discount)||0,line_total:(num(line.quantity)||0)*(num(line.unit_price)||0)-(num(line.discount)||0)}));
     if (inv.promise_to_pay_date) add('payment_promises',{id:fixedId(`promise:${inv.id}`),business_id:inv.business_id,
