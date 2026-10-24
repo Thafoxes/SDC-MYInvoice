@@ -117,7 +117,7 @@ function projectState(state, evidenceRows = []) {
     add('invoices',{id:inv.id,business_id:inv.business_id,purchase_order_id:orders.has(inv.purchase_order_id)?inv.purchase_order_id:null,
       quotation_id:quotations.has(inv.quotation_id)?inv.quotation_id:null,
       customer_id:inv.customer_id,invoice_number:inv.invoice_number,issue_date:day(inv.issue_date),due_date:day(inv.due_date),
-      currency:orders.get(inv.purchase_order_id)?.details?.currency||'MYR',subtotal:inv.invoice_amount,
+      currency:require('../.server-build/lib/store.js').invoiceCurrency(inv,state),subtotal:inv.invoice_amount,
       invoice_amount:inv.invoice_amount,document_status:inv.status,dispute_active:bool(inv.dispute_active),
       settlement_required:bool(inv.settlement_required),verification_hold:bool(inv.verification_hold),created_at:dt(inv.created_at)});
     const q=quotations.get(inv.quotation_id);

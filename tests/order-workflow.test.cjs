@@ -154,3 +154,21 @@ test('buyer chat PDFs use the item extraction path and retain original PDF evide
  assert.deepEqual(Buffer.from(stored.bytes),bytes);
  assert.equal(core.getStore().orderEvidence.length,0,'extraction still requires seller review and explicit attachment');
 });
+
+test('SGD agreement carries through PO, invoice, PDF and MariaDB projection with legacy inference',t=>{
+ const {orderId}=fixture(t);
+ const q=workflow.saveQuotation(orderId,{reference:'SGD-QUOTE',currency:'SGD',payment_terms:'Net 7',delivery_terms:'Collection',valid_until:'2026-12-30',items:[{name:'Box A',code:'',quantity:50,unit_price:10,discount:0}]},...actor);
+ workflow.setQuotationDecision(q.id,'accepted','Buyer agreed SGD prices',null,...actor);
+ assert.equal(core.getStore().purchaseOrders.find(o=>o.id===orderId).details.currency,'SGD');
+ assert.equal(customers.approvePurchaseOrder(orderId,...actor).success,true);
+ workflow.confirmDelivery(orderId,'Box A',50,'Collected',null,...actor);
+ const result=workflow.issueOrderInvoice(orderId,'SGD-INVOICE','2026-10-24','2026-10-31',...actor);
+ const inv=core.getStore().invoices.find(i=>i.id===result.id);assert.equal(inv.currency,'SGD');
+ const {invoiceDocument}=require('../.server-build/lib/invoiceDocuments.js');
+ const doc=invoiceDocument(core.getStore(),inv.id,'invoice');assert.match(JSON.stringify(doc),/SGD 500.00/);assert.ok(!JSON.stringify(doc).includes('MYR 500.00'));
+ assert.equal(require('../server/mariadb-adapter.cjs').projectState(core.getStore()).invoices[0].currency,'SGD');
+ core.update(d=>{delete d.invoices.find(i=>i.id===inv.id).currency;});
+ assert.equal(core.computeInvoiceWithCustomer(core.getStore().invoices[0],core.getStore(),'2026-10-24').currency,'SGD');
+ assert.match(JSON.stringify(invoiceDocument(core.getStore(),inv.id,'invoice')),/SGD 500.00/);
+ core.update(d=>{d.invoices[0].currency='SGD';d.businesses[0].currency='USD';});assert.equal(core.invoiceCurrency(core.getStore().invoices[0],core.getStore()),'SGD');
+});

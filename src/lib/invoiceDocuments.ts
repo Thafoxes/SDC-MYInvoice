@@ -1,5 +1,5 @@
 import type { StoreData } from './store';
-import { computeInvoiceWithCustomer } from './store';
+import { computeInvoiceWithCustomer,invoiceCurrency } from './store';
 import { documentContactSections } from './documentPdf';
 import type { DocumentSection } from './documentPdf';
 export function invoiceDocument(data:StoreData,invoiceId:string,kind:'invoice'|'final_receipt'){
@@ -7,10 +7,11 @@ export function invoiceDocument(data:StoreData,invoiceId:string,kind:'invoice'|'
  const business=data.businesses.find(b=>b.id===inv.business_id),customer=data.customers.find(c=>c.id===inv.customer_id&&c.business_id===inv.business_id);
  const order=data.purchaseOrders.find(o=>o.id===inv.purchase_order_id&&o.business_id===inv.business_id);
  const quote=data.quotations.find(q=>q.id===inv.quotation_id&&q.business_id===inv.business_id);
- const currency=business?.currency||quote?.currency||'MYR';const money=(n:number)=>`${currency} ${n.toFixed(2)}`;
+ const currency=invoiceCurrency(inv,data);const money=(n:number)=>`${currency} ${n.toFixed(2)}`;
  const receipt=kind==='final_receipt'?inv.final_receipt:undefined;
  if(kind==='final_receipt'&&!receipt)throw Error('Issue the final receipt after confirming settlement first');
  const totals=receipt||computeInvoiceWithCustomer(inv,data,data.demoState.simulated_date);
+ const current=computeInvoiceWithCustomer(inv,data,data.demoState.simulated_date);
  const title=receipt?(receipt.total_paid>0?'FINAL PAYMENT RECEIPT':'FINAL SETTLEMENT STATEMENT'):'INVOICE TRACKING COPY';
  const reference=receipt?.number||inv.invoice_number;
  const sections:DocumentSection[]=[{heading:'Document information',lines:[`Reference: ${reference}`,`Invoice: ${inv.invoice_number}`,
@@ -27,5 +28,10 @@ export function invoiceDocument(data:StoreData,invoiceId:string,kind:'invoice'|'
   sections.push({heading:'Recorded payments',lines:receipt.payments.length?receipt.payments.map(p=>`${p.payment_date} | ${p.method} | ${money(p.amount)} | Reference: ${p.reference||'-'}`):['No cash payment received; settled by credit adjustments.']});
   sections.push({heading:'Seller confirmation',lines:[`Confirmed by: ${receipt.issued_by}`,`Confirmed at: ${receipt.issued_at}`,`Verification source: ${receipt.verification_note}`]});
  }else sections.push({heading:'Terms',lines:[`Payment terms: ${quote?.payment_terms||order?.details?.payment_terms||'-'}`,`Delivery terms: ${quote?.delivery_terms||'-'}`]});
+ if(current.outstanding_balance<=0){
+  const paidByFunds=current.total_paid>=inv.invoice_amount+(current.total_debits||0);
+  sections.push({heading:'Settlement status',lines:[paidByFunds?'FULLY PAID - This invoice has been fully paid.':'FULLY SETTLED - No outstanding balance; settlement includes credit adjustments.',...(inv.dispute_active?['An active dispute remains for seller review.']:[])]});
+ }
+ sections.push({heading:'Digital copy',lines:['This is a computer-generated digital copy.','No signature is required.']});
  return {filename:`${kind}-${reference}.pdf`,title,sections};
 }

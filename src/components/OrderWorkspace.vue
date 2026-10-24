@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {quotationDefaults} from '@/lib/businessSettings';
 import { computed, reactive, ref, watch } from 'vue';
 import type { PurchaseOrder, PurchaseOrderItem } from '@/types';
 import { useDemoStore } from '@/composables/useDemoStore';
@@ -10,6 +11,7 @@ import { saveQuotation,copyQuotationToOrder,setQuotationDecision,confirmDelivery
  setOrderCase,resolveOrderCase,uploadOrderEvidence,uploadPaymentEvidence,attachOrderEvidence,issueCreditNote,acceptDeliveryShortfall,issueDebitNote } from '@/services/commands';
 import type { OrderEvidence } from '@/lib/orderWorkflow';
 import { Check, AlertTriangle, Minus, FileText } from 'lucide-vue-next';
+import PaymentRequest from '@/components/PaymentRequest.vue';
 import InvoiceDocuments from '@/components/InvoiceDocuments.vue';
 import {invoiceDocument} from '@/lib/invoiceDocuments';
 import {hasCurrentFinalReceipt} from '@/lib/settlement';
@@ -67,15 +69,15 @@ function goTo(key:StageKey){
 watch(()=>props.order.id,()=>{
  const q=quote.value;qform.reference=q?.reference||`QT-${props.order.reference}`;
  qform.currency=q?.currency||props.order.details?.currency||'MYR';
- qform.payment_terms=q?.payment_terms||props.order.details?.payment_terms||'';
- qform.delivery_terms=q?.delivery_terms||'';qform.valid_until=q?.valid_until||'';
+ qform.payment_terms=q?q.payment_terms:quotationDefaults(DEMO_BUSINESS_ID).payment_terms;
+ qform.delivery_terms=q?.delivery_terms||'';qform.valid_until=q?q.valid_until:quotationDefaults(DEMO_BUSINESS_ID).valid_until;
  qform.items=structuredClone(q?.items||props.order.details?.items||[]).map(line=>({...line,unit_price:line.unit_price??null,discount:line.discount??0}));
  invForm.reference=`INV-${props.order.reference}`;invForm.issue_date=data.value.demoState.simulated_date;
  invForm.due_date='';claimForm.amount=null;claimForm.reference='';claimForm.evidence_id='';
  deliveryForm.name=props.order.details?.items[0]?.name||'';deliveryForm.accepted=null;deliveryForm.note='';buyerNote.value='';buyerEvidence.value='';
 }, {immediate:true});
 watch(()=>quote.value?.updated_at,()=>{const q=quote.value;if(q)Object.assign(qform,{reference:q.reference,items:structuredClone(q.items),currency:q.currency,payment_terms:q.payment_terms,delivery_terms:q.delivery_terms,valid_until:q.valid_until});});
-function copyOrderItems(){qform.items=structuredClone(props.order.details?.items||[]);qform.currency=props.order.details?.currency||'MYR';qform.payment_terms=props.order.details?.payment_terms||'';}
+function copyOrderItems(){qform.items=structuredClone(props.order.details?.items||[]);qform.currency=props.order.details?.currency||'MYR';qform.payment_terms=quotationDefaults(DEMO_BUSINESS_ID).payment_terms;}
 async function run(callback:()=>Promise<unknown>){busy.value=true;error.value='';notice.value='';
  try { const result=await callback() as {success?:boolean;error?:string}|undefined;
   if(result?.success===false)throw Error(result.error||'Action failed');
@@ -130,7 +132,7 @@ const invoiceGate=computed(()=>{
  if(quote.value?.status!=='accepted')return "Record the buyer's acceptance of the quotation first.";
  const critical=blockers.value.find(b=>b.critical);return critical?`Resolve first: ${critical.reason}.`:'';});
 const pendingCredit=computed(()=>creditNotes.value.filter(n=>!n.invoice_id).reduce((s,n)=>s+n.amount,0));
-function asMoney(n:number|null|undefined){return `${quote.value?.currency||props.order.details?.currency||'MYR'} ${(n||0).toFixed(2)}`;}
+function asMoney(n:number|null|undefined){return `${invoiceView.value?.currency||quote.value?.currency||props.order.details?.currency||'MYR'} ${(n||0).toFixed(2)}`;}
 function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
  if(kind==='invoice'&&invoice.value){const doc=invoiceDocument(data.value,invoice.value.id,'invoice');downloadDocumentPdf(doc.filename,doc.title,doc.sections);return;}
  const po=props.order;const lines=((kind==='quote'||kind==='invoice')?quote.value?.items||po.details?.items:po.details?.items)||[];
@@ -142,10 +144,11 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
   const rec=receipts.value.find(r=>r.id===receiptId);sections.push({heading:'Seller-verified settlement',lines:[
    `Invoice: ${invoice.value?.invoice_number||'N/A'}`,`Payment received: ${asMoney(rec?.amount)}`,`Verified / recorded: ${rec?.issued_at||''}`]});
  }else{
-  sections.push({heading:`Items (${quote.value?.currency||po.details?.currency||'MYR'})`,lines:[],items:lines});
-  sections.push({heading:'Commercial terms',lines:[`Total: ${(kind==='po' && purchaseOrderTotal(lines)===null)?'-':asMoney(kind==='quote'?quote.value?.amount:kind==='invoice'?invoice.value?.invoice_amount:purchaseOrderTotal(lines))}`,
+  sections.push({heading:`Items (${(kind==='po'?po.details?.currency:quote.value?.currency)||'MYR'})`,lines:[],items:lines});
+  sections.push({heading:'Commercial terms',lines:[`Total: ${(kind==='po' && purchaseOrderTotal(lines)===null)?'-':`${kind==='po'?po.details?.currency:quote.value?.currency||po.details?.currency} ${(kind==='quote'?quote.value?.amount:kind==='invoice'?invoice.value?.invoice_amount:purchaseOrderTotal(lines))?.toFixed(2)}`}`,
    `Payment terms: ${quote.value?.payment_terms||po.details?.payment_terms||'To be confirmed'}`,
-   `Delivery terms: ${quote.value?.delivery_terms||'To be confirmed'}`]});
+   `Delivery terms: ${quote.value?.delivery_terms||'To be confirmed'}`,
+   ...(kind==='quote'?[`Prices valid until: ${quote.value?.valid_until||'To be confirmed'}`]:[])]});
  }
  downloadDocumentPdf(`${kind}-${reference||po.reference}.pdf`,title,sections);
 }
@@ -154,6 +157,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
  <section class="card p-4 sm:p-6 space-y-6" aria-label="Order progress and documents">
   <div><div class="flex flex-wrap justify-between items-center gap-2"><h3 class="text-lg font-semibold">Order progress · {{order.reference}}</h3><button class="outline-btn" type="button" @click="download('po')">Download order summary PDF</button></div>
   <p class="text-xs text-slate-500 mt-1">Progress reflects recorded seller decisions. This is not an automatic buyer approval or statutory e-invoice.</p></div>
+  <BlockerRequest :key="order.id+'-share-order'" :facts="{...facts('share_order'),amount:purchaseOrderTotal(order.details?.items||[])===null?'To be priced':(order.details?.currency||'MYR')+' '+purchaseOrderTotal(order.details?.items||[])?.toFixed(2),paymentTerms:order.details?.payment_terms,documentStatus:order.status}" :phone="customer?.phone" :email="customer?.email" :lang="buyerLang" />
   <ol class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" aria-label="Order progress">
    <li v-for="(s,i) in stages" :key="s.key">
     <button type="button" class="flex h-full w-full flex-col items-stretch justify-start rounded-lg border p-3 text-left transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
@@ -206,6 +210,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
      <button type="button" class="outline-btn" :disabled="busy||qform.items.length>=100" @click="qform.items.push({name:'',code:'',quantity:1,unit_price:null,discount:0})">Add quotation item</button>
      <button class="primary-btn" :disabled="busy||!qform.items.length" @click="saveQuote">Save quotation draft</button>
     </div><p v-if="quote" class="text-sm">{{quote.reference}} · {{asMoney(quote.amount)}} · {{quote.status}}</p>
+    <BlockerRequest v-if="quote" :key="quote.id+'-share'" :facts="{...facts('share_quotation'),amount:quote.currency+' '+quote.amount.toFixed(2),paymentTerms:quote.payment_terms,validUntil:quote.valid_until,documentStatus:quote.status}" :phone="customer?.phone" :email="customer?.email" :lang="buyerLang" />
     <div v-if="quote&&quote.status!=='accepted'" class="space-y-2 border-t pt-3"><h5 class="font-semibold text-sm">Record buyer response (seller confirmation)</h5>
      <select class="form-input !mt-0" v-model="decision"><option value="sent">Sent manually</option><option value="accepted">Accepted</option><option value="revision_requested">Revision requested</option><option value="rejected">Rejected</option></select>
      <label class="block text-xs">Upload buyer agreement or request (optional)<input type="file" accept="image/png,image/jpeg,application/pdf" class="block mt-1 text-sm" :disabled="uploading||busy" @change="upload($event,'buyer_approval',true)" /></label>
@@ -272,6 +277,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
   </div>
   <div id="stage-payment" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Payment and receipt</h4>
     <p v-if="invoice" class="text-sm">Outstanding: <strong>{{asMoney(invoiceView?.outstanding_balance)}}</strong> · Evidence alone never verifies a bank transfer.</p><p v-else class="text-sm text-slate-500">Payment tracking starts when the invoice is created.</p>
+    <PaymentRequest v-if="invoice" :invoice-id="invoice.id" />
     <div v-if="invoice && invoiceView && invoiceView.outstanding_balance>0" class="grid sm:grid-cols-3 gap-2"><input v-model.number="claimForm.amount" type="number" min="0.01" step="0.01" class="form-input !mt-0" placeholder="Claimed amount" />
       <input v-model="claimForm.reference" class="form-input !mt-0" placeholder="Payment reference" />
       <select v-model="claimForm.evidence_id" class="form-input !mt-0"><option value="">No screenshot</option><option v-for="e in evidence.filter(x=>x.kind==='payment_proof')" :key="e.id" :value="e.id">{{e.filename}}</option></select>

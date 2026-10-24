@@ -87,3 +87,27 @@ test('direct orders use our company settings and uploaded PO supplier text stays
  assert.equal(customers.updatePurchaseOrder(direct.id,record.reference,revised,...actor).success,true);
  assert.equal(store.getStore().purchaseOrders.find(o=>o.id===direct.id).details.supplier_name,settings.name);
 });
+
+test('company quotation defaults are validated, applied on save and preserve existing quotations',t=>{
+ fixture(t);store.setDemoDate('2026-10-24');
+ const {quotationDefaults}=require('../.server-build/lib/businessSettings.js');
+ assert.equal(quotationDefaults().valid_until,'2026-10-31');
+ assert.throws(()=>saveBusinessSettings({...settings,quotation_validity_days:0},...actor),/validity/);
+ saveBusinessSettings({...settings,payment_terms:'50% deposit; balance before delivery.',quotation_validity_days:14},...actor);
+ const c=customers.createCustomer({name:'Buyer',phone:'0123456789',email:''},...actor);
+ const details=emptyPurchaseOrderDetails();details.currency='MYR';details.items=[{name:'Box',code:'',quantity:1,unit_price:100,discount:0}];
+ const o=customers.createPurchaseOrder(c.id,'POLICY-PO',...actor,details);
+ const q=workflow.saveQuotation(o.id,{reference:'POLICY-Q',items:details.items,currency:'MYR',payment_terms:'',delivery_terms:'Collection',valid_until:''},...actor);
+ const saved=store.getStore().quotations.find(x=>x.id===q.id);assert.equal(saved.payment_terms,'50% deposit; balance before delivery.');assert.equal(saved.valid_until,'2026-11-07');
+ saveBusinessSettings({...settings,payment_terms:'Cash on delivery',quotation_validity_days:7},...actor);
+ assert.equal(store.getStore().quotations.find(x=>x.id===q.id).payment_terms,saved.payment_terms);
+});
+test('invoice PDFs distinguish paid, credited and unpaid invoices and include digital copy wording',t=>{
+ fixture(t);const {invoiceDocument}=require('../.server-build/lib/invoiceDocuments.js');
+ const {createDocumentPdf}=require('../.server-build/lib/documentPdf.js');
+ store.update(d=>{d.customers.push({id:'pdf-buyer',business_id:'biz-001',name:'Buyer',phone:null,email:null,telegram_chat_id:null});d.invoices.push({id:'pdf-invoice',business_id:'biz-001',customer_id:'pdf-buyer',invoice_number:'PDF-TEST',invoice_amount:100,issue_date:'2026-10-01',due_date:'2026-10-08',status:'paid',labels:[],dispute_active:false,verification_hold:false,promise_to_pay_date:null,promise_confirmed:false,created_at:new Date().toISOString()});});
+ const text=()=>{const doc=invoiceDocument(store.getStore(),'pdf-invoice','invoice');return Buffer.from(createDocumentPdf(doc.title,doc.sections)).toString();};
+ assert.ok(!text().includes('FULLY PAID'));assert.ok(text().includes('No signature is required.'));
+ store.update(d=>d.payments.push({id:'pdf-payment',business_id:'biz-001',invoice_id:'pdf-invoice',amount:100,payment_date:'2026-10-24',method:'cash',reference:'counted',verification_status:'recorded',created_at:new Date().toISOString()}));assert.ok(text().includes('FULLY PAID'));
+ store.update(d=>{d.payments=[];d.credits.push({id:'pdf-credit',business_id:'biz-001',invoice_id:'pdf-invoice',amount:100,reason:'Agreed return',created_at:new Date().toISOString()});});assert.ok(!text().includes('FULLY PAID'));assert.ok(text().includes('FULLY SETTLED'));
+});

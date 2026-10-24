@@ -21,6 +21,8 @@ export function configureStorage(adapter: Pick<Storage, 'getItem' | 'setItem'>):
 export function replaceSnapshot(data: StoreData): void { cache = migrate(data); }
 
 export interface StoreData extends WorkflowData {
+  knowledgePolicies?: import('./knowledge').KnowledgePolicy[];
+  demoScenarios?: { business_id:string; reference_date:string; ids:string[] };
   sample_data_removed?: boolean;
   purchaseOrders: PurchaseOrder[];
   receipts?: Receipt[];
@@ -178,6 +180,11 @@ export const DEMO_BUSINESS_NAME = 'My business';
 export function debitTotal(data: { debitNotes?: { invoice_id: string; business_id: string; amount: number }[] }, inv: Pick<Invoice, 'id' | 'business_id'>): number {
   return sumMoney((data.debitNotes ?? []).filter(n => n.invoice_id === inv.id && n.business_id === inv.business_id).map(n => n.amount));
 }
+export function invoiceCurrency(inv:Invoice,data:StoreData):string {
+ return inv.currency||data.quotations.find(q=>q.id===inv.quotation_id&&q.business_id===inv.business_id)?.currency
+  ||data.purchaseOrders.find(o=>o.id===inv.purchase_order_id&&o.business_id===inv.business_id)?.details?.currency
+  ||data.businesses.find(b=>b.id===inv.business_id)?.currency||'MYR';
+}
 export function computeInvoiceWithCustomer(inv: Invoice, data: StoreData, todayStr: string): InvoiceWithCustomer {
   const payments = data.payments.filter((p) => p.business_id === inv.business_id && p.invoice_id === inv.id && p.verification_status === 'recorded');
   const credits = data.credits.filter((c) => c.business_id === inv.business_id && c.invoice_id === inv.id);
@@ -188,6 +195,7 @@ export function computeInvoiceWithCustomer(inv: Invoice, data: StoreData, todayS
   const dOverdue = outstanding > 0 ? daysOverdue(inv.due_date, todayStr) : 0;
   return {
     ...inv,
+    currency:invoiceCurrency(inv,data),
     status: outstanding <= 0 ? 'paid' : dOverdue > 0 ? 'overdue' : 'pending',
     customer: data.customers.find((c) => c.id === inv.customer_id && c.business_id === inv.business_id),
     outstanding_balance: outstanding,
@@ -289,10 +297,11 @@ export function updateCustomerResponse(id: string, patch: Partial<CustomerRespon
   });
 }
 
-export function addAiMessage(businessId: string, userId: string | null, role: 'user' | 'assistant', content: string): void {
+export function addAiMessage(businessId: string, userId: string | null, role: 'user' | 'assistant', content: string, sources: {id:string;title:string;url:string}[] = []): void {
   update((d) => {
     d.aiConversations.push({
       id: uid('ai'), business_id: businessId, user_id: userId, role, content,
+      sources:sources.slice(0,40).filter(s=>typeof s.url==='string'&&/^#\/(invoices\?invoice=|orders\/[a-f0-9-]+\/view$|ai-assistant\?(policy=|guide=))/.test(s.url)).map(s=>({id:s.id,title:s.title,url:s.url})),
       created_at: new Date().toISOString(),
     });
   });

@@ -34,3 +34,13 @@ test('WhatsApp link needs a real number and encodes the message', async () => {
   assert.equal(whatsappLink('', 'x'), null);
   assert.equal(whatsappLink('12', 'x'), null);
 });
+test('quotation and PO drafts preserve saved currency, terms and references in all languages',async()=>{
+ const {draftBlockerRequest,documentRequestSubject}=await mod;
+ for(const lang of ['en','ms','zh'])for(const kind of ['share_quotation','share_order']){
+  const f={...facts,kind,quotationRef:'SGD-Q-1',amount:'SGD 760.00',paymentTerms:'50% deposit',validUntil:'2026-11-01',documentStatus:'draft'};
+  const text=draftBlockerRequest(f,lang);const reference=kind==='share_quotation'?'SGD-Q-1':'ORD-1002';
+  for(const value of [reference,'SGD 760.00','50% deposit','draft',facts.buyerName,facts.sellerName])assert.ok(text.includes(value),kind+'/'+lang+': '+value);
+  assert.ok(!text.includes('MYR'));assert.ok(documentRequestSubject(f,lang).includes(reference));
+  assert.equal(text.includes('2026-11-01'),kind==='share_quotation');
+ }
+});
