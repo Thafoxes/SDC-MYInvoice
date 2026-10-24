@@ -107,13 +107,13 @@ A buyer does not need to issue a PO. Choose **Create order**, select the custome
 
 ## Downloading order, quotation and invoice PDFs
 
-The document download buttons include supplier and buyer names, addresses, phone numbers and emails. Buyer contacts use the saved customer record, with order/PO fields as a fallback; supplier contacts use saved Settings first, with order/PO fields as a fallback. Missing values print as `-`. Use **Settings** to save the seller name, address, phone and email.
+The document download buttons include supplier and buyer names, addresses, phone numbers and emails. Buyer contacts use the saved customer record, with order/PO fields as a fallback; supplier contacts use your own company Settings. Missing values print as `-`. Use **Settings** to save the seller name, address, phone and email.
 
 Items print in a bordered table: item/code, quantity, unit price, line discount and line total. Unknown prices print as `-`; long tables repeat their headers on subsequent pages. Invoice items use the quotation when available. These demo PDFs use built-in ASCII fonts; multilingual documents require a Unicode-capable renderer.
 
 ## Seller settings and document preparer
 
-Open **Settings** in the sidebar. Fill in the supplier/seller name, address, phone, optional email, and **Salesperson / prepared by**, then click **Save settings**. The seller name is required; other contact fields can be left blank. PDF contact sections prefer these saved settings over uploaded PO supplier fields, and use `-` when neither source has a value.
+Open **Settings** in the sidebar. Fill in the supplier/seller name, address, phone, optional email, and **Salesperson / prepared by**, then click **Save settings**. The seller name is required; other contact fields can be left blank. PDF supplier contacts use your saved company settings, with `-` for missing values. A different supplier printed on an uploaded PO never replaces your company profile.
 
 The salesperson setting is a document name, not a login or permission change. Leaving it blank uses the seller account name. New quotations keep the name recorded when created, including subsequent revisions. New invoices record the name set when issued. Later settings changes do not replace those recorded preparers. Older documents with no recorded preparer print `-`.
 
@@ -130,3 +130,9 @@ Invoice Details now contains **View / print invoice PDF** and download buttons. 
 5. Click **Complete order** and confirm. The server rechecks processing approval, quotation acceptance, delivery, payment review, the settled balance and the current final receipt. Remaining blockers are listed with a link to the order.
 
 Issuing a receipt does not post a payment. Repeating issuance for the same settlement reuses the receipt. Extra charges or financial changes invalidate its use for current completion; earlier settlement information remains in the audit history. After the additional balance is settled, issue an updated final receipt and reconfirm completion. All of this remains seller-recorded: the app does not contact your bank or provide production authentication.
+
+## Our company on new orders
+
+The new-order form shows **Our company — supplier / seller** as read-only information from Settings, with an **Edit company settings** link. You no longer need to type the supplier on every order. Direct and chat orders record your company details when saved. Uploaded PO supplier text remains source evidence; the uploaded original is unchanged.
+
+Fresh workspaces start with the editable demo profile **Kedai Maju Jaya Sdn Bhd**, fictional address **12 Jalan Demo, 50000 Kuala Lumpur, Malaysia**, placeholder phone **+60 3-0000 0000**, email **sales@kedaimaju.example**, and **Demo Salesperson**. Settings identifies these contacts as fictional. Existing custom settings are preserved. An untouched “My business” placeholder upgrades to this profile without adding sample customers, orders or payments.

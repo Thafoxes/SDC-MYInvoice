@@ -1,3 +1,4 @@
+import { supplierFromCompany } from './companyProfile';
 import type { Customer, OrderBlocker, PurchaseOrder, PurchaseOrderDetails } from '@/types';
 import { getStore, update, DEMO_BUSINESS_ID, computeInvoiceWithCustomer } from './store';
 import { validatePurchaseOrderDetails, purchaseOrderTotal } from './purchaseOrder';
@@ -117,6 +118,7 @@ export function createPurchaseOrder(customerId: string, reference: string, actor
   try { if (details !== undefined) confirmed = validatePurchaseOrderDetails(details); } catch (error) { return { success: false, error: (error as Error).message }; }
   const id = crypto.randomUUID();
   if (!['manual','chat_screenshot','uploaded_po'].includes(sourceMode)) return { success: false, error: 'Invalid order source mode' };
+  if(confirmed && sourceMode!=='uploaded_po')Object.assign(confirmed,supplierFromCompany(getStore().businesses.find(b=>b.id===businessId)));
   const now = new Date().toISOString();
   update(data => {
     data.purchaseOrders.unshift({ id, business_id: businessId, customer_id: customerId, reference: reference.trim(), status: 'draft', source_mode: sourceMode, created_at: now, ...(confirmed ? { details: confirmed } : {}) });
@@ -134,6 +136,7 @@ export function updatePurchaseOrder(orderId: string, reference: string, details:
   if (getStore().purchaseOrders.some(o => o.id !== orderId && o.business_id === businessId && o.customer_id === order.customer_id && o.reference.toLowerCase() === reference.trim().toLowerCase())) return { success: false, error: 'Duplicate PO reference for this customer' };
   let confirmed: PurchaseOrderDetails;
   try { confirmed = validatePurchaseOrderDetails(details); } catch (error) { return { success: false, error: (error as Error).message }; }
+  if(order.source_mode!=='uploaded_po')Object.assign(confirmed,supplierFromCompany(getStore().businesses.find(b=>b.id===businessId)));
   const accepted = getStore().quotations.find(q=>q.purchase_order_id===orderId && q.status==='accepted');
   if (accepted && (JSON.stringify(confirmed.items)!==JSON.stringify(accepted.items) || confirmed.currency!==accepted.currency || confirmed.payment_terms!==accepted.payment_terms))
     return {success:false,error:'Items, prices and terms must match the accepted quotation. You can correct the optional document total without changing the agreement.'};

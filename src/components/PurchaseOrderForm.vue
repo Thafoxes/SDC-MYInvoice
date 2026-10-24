@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import { RouterLink } from 'vue-router';
 import type { Customer, PurchaseOrder, PurchaseOrderDetails } from '@/types';
 import type { CustomerExtraction } from '@/lib/customerOrders';
 import { emptyPurchaseOrderDetails, purchaseOrderLineTotal, purchaseOrderTotal, validatePurchaseOrderDetails } from '@/lib/purchaseOrder';
+import { useDemoStore } from '@/composables/useDemoStore';
+import { DEMO_BUSINESS_ID } from '@/lib/store';
 import { backendEnabled, extractPurchaseOrderDocument, extractChatOrder } from '@/services/commands';
 import type { ChatOrderUpload } from '@/services/commands';
 
 const props = defineProps<{ order?: PurchaseOrder; customer?: Customer; saving: boolean; savedRevision: number; mode?: 'create' | 'upload' }>();
 const emit = defineEmits<{ save: [reference: string, details: PurchaseOrderDetails]; buyer: [suggestion: CustomerExtraction]; dirty: [value: boolean]; screenshot: [result: ChatOrderUpload] }>();
+const {data}=useDemoStore();
+const company=computed(()=>data.value.businesses.find(b=>b.id===DEMO_BUSINESS_ID));
 const details = reactive(emptyPurchaseOrderDetails());
 const reference = ref('');
 const reviewed = ref(false);
@@ -51,7 +56,6 @@ type TextKey = Exclude<keyof PurchaseOrderDetails, 'items' | 'document_total' | 
 const groups: { title: string; fields: { key: TextKey; label: string; long?: boolean; date?: boolean }[] }[] = [
   { title: 'Order information', fields: [{ key: 'order_date', label: 'PO date', date: true }, { key: 'delivery_date', label: 'Delivery date', date: true }, { key: 'payment_terms', label: 'Payment terms' }, { key: 'document_status', label: 'Status printed on document' }] },
   { title: 'Buyer — company placing the order', fields: [{ key: 'buyer_name', label: 'Buyer name' }, { key: 'buyer_phone', label: 'Buyer phone' }, { key: 'buyer_email', label: 'Buyer email' }, { key: 'buyer_address', label: 'Buyer address', long: true }] },
-  { title: 'Supplier — company fulfilling the order', fields: [{ key: 'supplier_name', label: 'Supplier name' }, { key: 'supplier_phone', label: 'Supplier phone' }, { key: 'supplier_email', label: 'Supplier email' }, { key: 'supplier_address', label: 'Supplier address', long: true }] },
   { title: 'Delivery and internal references', fields: [{ key: 'delivery_address', label: 'Delivery address', long: true }, { key: 'delivery_phone', label: 'Delivery phone' }, { key: 'attention', label: 'Attention / contact' }, { key: 'requested_by', label: 'Requested by' }, { key: 'document_approved_by', label: 'Approved by on document' }, { key: 'department', label: 'Department' }, { key: 'notes', label: 'Notes', long: true }] },
 ];
 
@@ -146,6 +150,11 @@ function money(value: number | null) { return value === null || !Number.isFinite
     <p v-if="error" role="alert" class="text-sm text-rose-700">{{ error }}</p>
     <fieldset :disabled="disabled" class="min-w-0 space-y-6">
       <label class="block text-sm font-medium">{{props.mode==='upload'?'Buyer PO number':'Order reference'}} <span class="text-rose-700">*</span><input v-model.trim="reference" required maxlength="100" class="form-input" /></label>
+      <section class="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4" aria-label="Our company fulfilling this order">
+        <div class="flex flex-wrap justify-between items-center gap-2"><h3 class="text-sm font-semibold">Our company — supplier / seller</h3><RouterLink to="/settings" class="text-sm text-blue-700 underline">Edit company settings</RouterLink></div>
+        <p class="text-xs text-slate-600">Your own company fulfils this order. These details come from Settings; no supplier entry is needed here.</p>
+        <dl class="grid gap-3 text-sm sm:grid-cols-2"><div><dt class="text-slate-500">Company</dt><dd class="font-medium">{{company?.display_name||company?.name||'-'}}</dd></div><div><dt class="text-slate-500">Phone</dt><dd>{{company?.phone||'-'}}</dd></div><div><dt class="text-slate-500">Address</dt><dd class="whitespace-pre-line">{{company?.address||'-'}}</dd></div><div><dt class="text-slate-500">Email</dt><dd class="break-words">{{company?.email||'-'}}</dd></div></dl>
+      </section>
       <section v-for="group in groups" :key="group.title" class="space-y-3 border-t border-slate-100 pt-4">
         <h3 class="text-sm font-semibold text-slate-900">{{ group.title }}</h3>
         <div class="grid gap-3 sm:grid-cols-2">

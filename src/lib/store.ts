@@ -1,3 +1,4 @@
+import { DEMO_COMPANY_PROFILE } from './companyProfile';
 import type { WorkflowData } from './orderWorkflow';
 // Demo store: browser localStorage or an injected server persistence adapter.
 import {
@@ -45,7 +46,7 @@ function uid(prefix: string): string {
 function getSeedData(): StoreData {
   return {
     sample_data_removed: true,
-    businesses: [{ id: 'biz-001', name: 'My business', display_name: null, currency: 'MYR', timezone: 'Asia/Kuala_Lumpur' }],
+    businesses: [{ id: 'biz-001', ...DEMO_COMPANY_PROFILE, settings_initialized:true, currency: 'MYR', timezone: 'Asia/Kuala_Lumpur' }],
     users: [{ id: 'user-seller', business_id: 'biz-001', name: 'Seller', email: '', role: 'seller', avatar_color: '#1D72E0' }],
     customers: [], invoices: [], payments: [], credits: [], purchaseOrders: [],
     quotations: [], orderEvidence: [], deliveryConfirmations: [], paymentClaims: [], settlementReceipts: [], orderCases: [], creditNotes: [], debitNotes: [],
@@ -58,6 +59,14 @@ function getSeedData(): StoreData {
 let cache: StoreData | null = null;
 
 function migrate(data: StoreData): StoreData {
+  const company=data.businesses.find(b=>b.id==='biz-001');
+  if(company && !company.settings_initialized){
+    // Upgrade only the untouched placeholder; preserve existing custom company settings.
+    if(company.name==='My business' && (!company.display_name||company.display_name==='My business')
+      && !company.address && !company.phone && !company.email && !company.salesperson_name)
+      Object.assign(company,DEMO_COMPANY_PROFILE);
+    company.settings_initialized=true;
+  }
   data.purchaseOrders ??= [];
   data.quotations ??= []; data.orderEvidence ??= []; data.deliveryConfirmations ??= [];
   data.paymentClaims ??= []; data.settlementReceipts ??= []; data.orderCases ??= []; data.creditNotes ??= []; data.debitNotes ??= [];

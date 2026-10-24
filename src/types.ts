@@ -13,6 +13,7 @@ export interface Business {
   phone?: string;
   email?: string;
   salesperson_name?: string;
+  settings_initialized?: boolean;
   currency: string;
   timezone: string;
 }

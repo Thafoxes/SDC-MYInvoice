@@ -17,6 +17,7 @@ export function saveBusinessSettings(input:BusinessSettings,actor:string,role:st
   const business=d.businesses.find(b=>b.id===businessId)!;
   Object.assign(business,Object.fromEntries(Object.keys(fields).map(key=>[key,input[key as keyof BusinessSettings].trim()])));
   business.display_name=business.name;
+  business.settings_initialized=true;
   d.activityEvents.unshift({id:crypto.randomUUID(),business_id:businessId,invoice_id:null,event_type:'business_settings_updated',actor,actor_role:'seller',description:'Seller contact and document settings updated',metadata:{},created_at:new Date().toISOString()});
  });
  return {success:true};

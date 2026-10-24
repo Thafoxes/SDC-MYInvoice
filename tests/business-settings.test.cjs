@@ -60,3 +60,30 @@ test('browser storage persists settings without a backend and optional fields ca
  store.configureStorage({getItem:()=>saved||null,setItem:(_,value)=>saved=value});assert.equal(store.getStore().businesses[0].name,'My seller');
  assert.equal(store.getStore().businesses[0].salesperson_name,'');
 });
+
+test('fresh demo company defaults and placeholder migration preserve custom settings and transactions',()=>{
+ let saved;const adapter={getItem:()=>saved||null,setItem:(_,value)=>saved=value};store.configureStorage(adapter);
+ const fresh=store.getStore();assert.equal(fresh.businesses[0].name,'Kedai Maju Jaya Sdn Bhd');assert.ok(fresh.businesses[0].email.endsWith('.example'));
+ assert.equal(fresh.customers.length,0);assert.equal(fresh.invoices.length,0);
+ const old=structuredClone(fresh);old.businesses[0]={id:'biz-001',name:'My business',display_name:null,currency:'MYR',timezone:'Asia/Kuala_Lumpur'};
+ old.customers.push({id:'manual-buyer',business_id:'biz-001',name:'Actual saved buyer',phone:null,email:null,telegram_chat_id:null});
+ saved=JSON.stringify(old);store.configureStorage(adapter);assert.equal(store.getStore().businesses[0].name,'Kedai Maju Jaya Sdn Bhd');assert.equal(store.getStore().customers.length,1);
+ old.businesses[0].name='My existing company';old.businesses[0].phone='0123456789';saved=JSON.stringify(old);store.configureStorage(adapter);
+ assert.equal(store.getStore().businesses[0].name,'My existing company');assert.equal(store.getStore().businesses[0].phone,'0123456789');
+ saveBusinessSettings({name:'My business',address:'',phone:'',email:'',salesperson_name:''},...actor);
+ store.configureStorage(adapter);assert.equal(store.getStore().businesses[0].name,'My business');assert.equal(store.getStore().businesses[0].address,'');
+});
+
+test('direct orders use our company settings and uploaded PO supplier text stays source evidence',t=>{
+ fixture(t);saveBusinessSettings(settings,...actor);
+ const buyer=customers.createCustomer({name:'Buyer',phone:'0123456789',email:''},...actor);
+ const details={...emptyPurchaseOrderDetails(),currency:'MYR',supplier_name:'Different name on source',supplier_address:'Source address',items:[{name:'Box',code:'',quantity:1,unit_price:10,discount:0}]};
+ const direct=customers.createPurchaseOrder(buyer.id,'DIRECT-SETTINGS',...actor,details,'manual');
+ const record=store.getStore().purchaseOrders.find(o=>o.id===direct.id);assert.equal(record.details.supplier_name,settings.name);assert.equal(record.details.supplier_address,settings.address);
+ assert.equal(record.details.supplier_phone,settings.phone);
+ const uploaded=customers.createPurchaseOrder(buyer.id,'UPLOADED-SETTINGS',...actor,details,'uploaded_po');
+ assert.equal(store.getStore().purchaseOrders.find(o=>o.id===uploaded.id).details.supplier_name,'Different name on source');
+ const revised={...record.details,supplier_name:'Client supplied wrong company'};
+ assert.equal(customers.updatePurchaseOrder(direct.id,record.reference,revised,...actor).success,true);
+ assert.equal(store.getStore().purchaseOrders.find(o=>o.id===direct.id).details.supplier_name,settings.name);
+});

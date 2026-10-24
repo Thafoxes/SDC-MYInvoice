@@ -12,7 +12,7 @@ function wrap(line:string,max=84):string[]{
 }
 export function documentContactSections(business:Business|undefined,customer:Customer|undefined,details?:PurchaseOrderDetails):DocumentSection[]{
  return [{heading:'Supplier / seller',lines:[`Name: ${shown(business?.display_name||business?.name||details?.supplier_name)}`,
-  `Address: ${shown(business?.address||details?.supplier_address)}`,`Phone: ${shown(business?.phone||details?.supplier_phone)}`,`Email: ${shown(business?.email||details?.supplier_email)}`]},
+  `Address: ${shown(business?business.address:details?.supplier_address)}`,`Phone: ${shown(business?business.phone:details?.supplier_phone)}`,`Email: ${shown(business?business.email:details?.supplier_email)}`]},
  {heading:'Buyer / customer',lines:[`Name: ${shown(customer?.name||details?.buyer_name)}`,`Address: ${shown(customer?.address||details?.buyer_address)}`,
   `Phone: ${shown(customer?.phone||details?.buyer_phone)}`,`Email: ${shown(customer?.email||details?.buyer_email)}`]}];
 }

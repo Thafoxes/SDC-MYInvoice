@@ -2,7 +2,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {createDocumentPdf,documentContactSections}=require('../.test-build/lib/documentPdf.js');
 const {emptyPurchaseOrderDetails}=require('../.test-build/lib/purchaseOrder.js');
-const business={name:'Seller Ltd',display_name:null};
+const business={name:'Seller Ltd',display_name:null,address:'20 Seller Road',phone:'+60987654321',email:'sales@example.test'};
 const customer={name:'Buyer Ltd',address:'12 Main Road',phone:'+60123456789',email:'buyer@example.test'};
 const details={...emptyPurchaseOrderDetails(),supplier_address:'20 Seller Road',supplier_phone:'+60987654321',supplier_email:'sales@example.test'};
 const item={name:'Packing box',code:'BOX-1',quantity:20,unit_price:38,discount:5};
@@ -45,4 +45,9 @@ test('saved seller contacts take precedence over uploaded PO supplier fields',()
  assert.ok(sections[0].lines.includes('Address: Saved seller address'));
  assert.ok(sections[0].lines.includes('Phone: Saved phone'));
  assert.ok(sections[0].lines.includes('Email: seller@example.test'));
+});
+
+test('an empty saved company contact does not print a different supplier from the buyer PO',()=>{
+ const sections=documentContactSections({name:'Our company',display_name:null,address:'',phone:'',email:''},customer,details);
+ assert.ok(sections[0].lines.includes('Address: -'));assert.ok(sections[0].lines.includes('Phone: -'));
 });

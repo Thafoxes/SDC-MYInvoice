@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed,reactive,ref,watch } from 'vue';
+import { DEMO_COMPANY_PROFILE } from '@/lib/companyProfile';
 import { useDemoStore } from '@/composables/useDemoStore';
 import { DEMO_BUSINESS_ID,DEMO_SELLER_ID } from '@/lib/store';
 import { saveBusinessSettings } from '@/services/commands';
@@ -7,6 +8,7 @@ const {data,refreshStore}=useDemoStore();
 const business=computed(()=>data.value.businesses.find(b=>b.id===DEMO_BUSINESS_ID));
 const seller=computed(()=>data.value.users.find(u=>u.id===DEMO_SELLER_ID));
 const form=reactive({name:'',address:'',phone:'',email:'',salesperson_name:''});
+const isDemoProfile=computed(()=>business.value?.name===DEMO_COMPANY_PROFILE.name&&business.value?.email===DEMO_COMPANY_PROFILE.email);
 const busy=ref(false),dirty=ref(false),error=ref(''),notice=ref('');
 function load(){const b=business.value;Object.assign(form,{name:b?.name||'',address:b?.address||'',phone:b?.phone||'',email:b?.email||'',salesperson_name:b?.salesperson_name||''});}
 watch(business,()=>{if(!dirty.value)load();},{immediate:true});
@@ -24,6 +26,7 @@ async function save(){
  <div class="mx-auto max-w-3xl space-y-5">
   <form class="card p-5 sm:p-6 space-y-5" @submit.prevent="save" @input="dirty=true;notice=''">
    <div><h2 class="text-base font-semibold text-slate-900">Supplier / seller details</h2><p class="mt-1 text-sm text-slate-600">Used on order, quotation and invoice PDFs. Optional fields print as “-” when unavailable.</p></div>
+   <p v-if="isDemoProfile" class="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">This is the editable demo company profile. The address, phone and email are fictional; replace them with your own company details when needed.</p>
    <fieldset :disabled="busy" class="space-y-4">
     <label class="block text-sm font-medium">Supplier / seller name <span class="text-slate-500">(required)</span><input v-model="form.name" required maxlength="160" autocomplete="organization" class="form-input" /></label>
     <label class="block text-sm font-medium">Address<textarea v-model="form.address" maxlength="2000" rows="3" autocomplete="street-address" class="form-input" /></label>
