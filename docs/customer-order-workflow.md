@@ -264,3 +264,9 @@ Payment-request drafts support **EN / BM / 中文**, initially using the buyer�
 ## Prioritize orders by next step
 
 Use **Orders > Next step** to focus on Order, Quotation, Buyer’s PO, Delivery, Invoice, Payment or Receipt. **Blocked / needs review** includes any order whose next action is blocked; **Completed** shows orders with no remaining stage. The filter uses the same live workflow calculation as the Next step badge, works together with customer/order search, and shows matching counts. **Clear filters** restores the full list when a search has no matches. Filtering changes the display only; it does not approve orders or change payment rules.
+
+## Share quotation or PO/order-summary drafts
+
+The order workspace has **Draft request: share order / PO summary for review** near its order-summary PDF action. The Quotation section has **Draft request: share quotation for review** once a quotation is saved. Both use the same **EN / BM / 中文** controls as other buyer drafts, default to the buyer language, and allow recipient email/phone, subject and message editing.
+
+Drafts use saved references, status, currency, totals and payment terms; quotations include their saved price-validity date. They do not record buyer agreement or change workflow status. Unsaved quotation form edits are not included. Download the relevant PDF and manually attach it in your email app or WhatsApp. Opening a mail/chat draft does not send it, attach files or record delivery in NudgeWise. Switching language regenerates message/subject while keeping recipient edits.

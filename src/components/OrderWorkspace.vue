@@ -157,6 +157,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
  <section class="card p-4 sm:p-6 space-y-6" aria-label="Order progress and documents">
   <div><div class="flex flex-wrap justify-between items-center gap-2"><h3 class="text-lg font-semibold">Order progress · {{order.reference}}</h3><button class="outline-btn" type="button" @click="download('po')">Download order summary PDF</button></div>
   <p class="text-xs text-slate-500 mt-1">Progress reflects recorded seller decisions. This is not an automatic buyer approval or statutory e-invoice.</p></div>
+  <BlockerRequest :key="order.id+'-share-order'" :facts="{...facts('share_order'),amount:purchaseOrderTotal(order.details?.items||[])===null?'To be priced':(order.details?.currency||'MYR')+' '+purchaseOrderTotal(order.details?.items||[])?.toFixed(2),paymentTerms:order.details?.payment_terms,documentStatus:order.status}" :phone="customer?.phone" :email="customer?.email" :lang="buyerLang" />
   <ol class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" aria-label="Order progress">
    <li v-for="(s,i) in stages" :key="s.key">
     <button type="button" class="flex h-full w-full flex-col items-stretch justify-start rounded-lg border p-3 text-left transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
@@ -209,6 +210,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
      <button type="button" class="outline-btn" :disabled="busy||qform.items.length>=100" @click="qform.items.push({name:'',code:'',quantity:1,unit_price:null,discount:0})">Add quotation item</button>
      <button class="primary-btn" :disabled="busy||!qform.items.length" @click="saveQuote">Save quotation draft</button>
     </div><p v-if="quote" class="text-sm">{{quote.reference}} · {{asMoney(quote.amount)}} · {{quote.status}}</p>
+    <BlockerRequest v-if="quote" :key="quote.id+'-share'" :facts="{...facts('share_quotation'),amount:quote.currency+' '+quote.amount.toFixed(2),paymentTerms:quote.payment_terms,validUntil:quote.valid_until,documentStatus:quote.status}" :phone="customer?.phone" :email="customer?.email" :lang="buyerLang" />
     <div v-if="quote&&quote.status!=='accepted'" class="space-y-2 border-t pt-3"><h5 class="font-semibold text-sm">Record buyer response (seller confirmation)</h5>
      <select class="form-input !mt-0" v-model="decision"><option value="sent">Sent manually</option><option value="accepted">Accepted</option><option value="revision_requested">Revision requested</option><option value="rejected">Rejected</option></select>
      <label class="block text-xs">Upload buyer agreement or request (optional)<input type="file" accept="image/png,image/jpeg,application/pdf" class="block mt-1 text-sm" :disabled="uploading||busy" @change="upload($event,'buyer_approval',true)" /></label>
