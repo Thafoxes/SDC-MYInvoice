@@ -44,6 +44,21 @@ Open http://localhost:5173. The backend defaults to http://127.0.0.1:8787; Vite 
 
 `npm start` builds the frontend and starts the backend, which serves the built frontend too. Setting `PORT` makes the server listen on all interfaces and requires `DEMO_ACCESS_KEY`; this shared demo passcode is not production user authentication. Restart the backend after changing server settings and restart Vite after changing `VITE_*` settings.
 
+## Runpod Ollama
+
+The existing Ollama provider also accepts a remote Pod URL. This workspace's `.env` is configured for Pod `yj5ptfr3osz3l0`:
+
+```dotenv
+AI_PROVIDER=ollama
+OLLAMA_BASE_URL=https://yj5ptfr3osz3l0-11434.proxy.runpod.net
+OLLAMA_MODEL=gemma4:31b
+AI_TIMEOUT_MS=120000
+```
+
+Restart the backend with `npm run server` after changing these settings. No Runpod account key is needed for the Pod's native Ollama API; existing cloud credentials are unused in this mode. Frontend, database and local OCR settings stay the same.
+
+This Pod URL currently has no authentication. Before sending private business documents, protect it with an authenticated gateway or use a private SSH tunnel. For an authenticated Ollama gateway, use `AI_PROVIDER=cloud`, its URL in `CLOUD_AI_BASE_URL`, `CLOUD_AI_MODEL=gemma4:31b`, and its dedicated token in `CLOUD_AI_API_KEY` (never a `VITE_*` variable). A replacement Pod needs a new URL.
+
 ## MariaDB / XAMPP
 
 Use `DB_CLIENT=mariadb` with `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD` as shown in [`.env.example`](../.env.example). Start MariaDB before running the backend. phpMyAdmin is an administration UI; Node connects directly to MariaDB. Use a dedicated demo database: the adapter maintains a projection of application state in that schema.
