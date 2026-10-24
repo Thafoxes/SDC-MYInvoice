@@ -259,3 +259,8 @@ In **Orders > Payment and receipt**, use **Draft payment request · Email / What
 The included **demo payment link** opens a preview with an invoice reference and illustrative amount. It does not collect payment details, process funds or change invoice status. Link values can be edited and are not trusted financial records. Localhost links work only on the hosting computer; sharing an accessible demo requires a deployed URL and any configured demo access. Record payment only after independently checking settled funds.
 
 Payment-request drafts support **EN / BM / 中文**, initially using the buyer’s saved language (English when unspecified). Switching language regenerates the subject and message while preserving recipient details. Both email and WhatsApp use the selected draft text; review any edits again after switching.
+
+
+## Prioritize orders by next step
+
+Use **Orders > Next step** to focus on Order, Quotation, Buyer’s PO, Delivery, Invoice, Payment or Receipt. **Blocked / needs review** includes any order whose next action is blocked; **Completed** shows orders with no remaining stage. The filter uses the same live workflow calculation as the Next step badge, works together with customer/order search, and shows matching counts. **Clear filters** restores the full list when a search has no matches. Filtering changes the display only; it does not approve orders or change payment rules.

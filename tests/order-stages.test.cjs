@@ -88,3 +88,17 @@ test('quick sales skip quotation and buyer PO without fabricating acceptance',as
  const input={...base,order:{...base.order,status:'approved',source_mode:'quick_sale'},invoice:{invoice_number:'INV-POS',outstanding_balance:0,total_paid:500,dispute_active:false,verification_hold:false},deliveries:[{item_name:'Kuih box',accepted_quantity:100}],finalReceiptIssued:true,completionConfirmed:true};
  const stages=orderStages(input);assert.equal(stages.find(s=>s.key==='quotation').state,'skipped');assert.equal(stages.find(s=>s.key==='buyer_po').state,'skipped');assert.equal(stageSummary(stages).label,'Completed');
 });
+
+test('next-step filtering includes blocked stages, completion and live stage changes',async()=>{
+ const fs=require('node:fs'),path=require('node:path'),ts=require('typescript');
+ const source=fs.readFileSync(path.join(__dirname,'../src/presentation/orderStages.ts'),'utf8');
+ const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText;
+ const {matchesOrderNextStep}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+ const payment={key:'payment',name:'Payment',state:'current',detail:'Waiting for funds'};
+ const dispute={...payment,state:'blocked'};
+ assert.equal(matchesOrderNextStep(payment,'payment'),true);assert.equal(matchesOrderNextStep(payment,'blocked'),false);
+ assert.equal(matchesOrderNextStep(dispute,'blocked'),true);assert.equal(matchesOrderNextStep(dispute,'payment'),true);
+ assert.equal(matchesOrderNextStep(dispute,'quotation'),false);assert.equal(matchesOrderNextStep(dispute,'completed'),false);
+ assert.equal(matchesOrderNextStep(null,'completed'),true);assert.equal(matchesOrderNextStep(null,'blocked'),false);assert.equal(matchesOrderNextStep(null,'all'),true);
+ assert.equal(matchesOrderNextStep({...payment,key:'receipt'},'payment'),false);
+});

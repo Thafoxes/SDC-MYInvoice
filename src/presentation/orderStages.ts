@@ -110,3 +110,11 @@ export function stageSummary(stages: OrderStage[]): { label: string; state: Stag
   if (!next) return { label: 'Completed', state: 'done' };
   return { label: next.state === 'blocked' ? `${next.name} · Blocked` : next.name, state: next.state };
 }
+
+/** Filter by the same next action shown in the order list, including blocked stages. */
+export function matchesOrderNextStep(next:OrderStage|null,filter:string):boolean {
+  if(filter==='all')return true;
+  if(filter==='completed')return next===null;
+  if(filter==='blocked')return next?.state==='blocked';
+  return next?.key===filter;
+}
