@@ -23,21 +23,24 @@
     "test:pdf": "tsc -p tsconfig.logic-tests.json && node tests/setup-test-build.cjs && node --test tests/document-pdf.test.cjs",
     "test:settings": "npm run server:build && node --test tests/business-settings.test.cjs",
     "test:settlement": "npm run server:build && node --test tests/settlement.test.cjs",
+    "test:markdown": "node --test tests/assistant-markdown.test.cjs",
     "test:demo-rag": "npm run server:build && node --test tests/demo-rag.test.cjs",
     "test:quick-sale": "npm run server:build && node --test tests/quick-sale.test.cjs"
   },
   "dependencies": {
-    "vue": "^3.5.13",
-    "vue-router": "^4.5.0",
-    "lucide-vue-next": "^0.468.0",
     "chart.js": "^4.4.7",
+    "lucide-vue-next": "^0.468.0",
+    "markdown-it": "^14.3.3",
+    "mysql2": "^3.15.0",
+    "vue": "^3.5.13",
     "vue-chartjs": "^5.3.2",
-    "mysql2": "^3.15.0"
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.2.0",
+    "@types/node": "^22.10.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/tsconfig": "^0.7.0",
-    "@types/node": "^22.10.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
