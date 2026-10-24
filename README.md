@@ -176,9 +176,11 @@ src/
   presentation/      Order stages, labels and review messages
 server/              HTTP API, database adapters, OCR worker and AI integration
 tests/               Regression suites and synthetic fixtures
-docs/                Workflow manual, project map and declarations
+docs/                Workflow manual, project map and technical guides
 database/            SQL export and database materials
-output/pdf/          Demo PDF documents
+output/pdf/          Fictional buyer PO for manual demos
+submission/          Competition submission evidence
+graphify-out/        Generated code map (snapshot; confirm against source)
 ```
 
 ## Documentation
@@ -186,17 +188,16 @@ output/pdf/          Demo PDF documents
 - [Customer and order workflow](docs/customer-order-workflow.md)
 - [Backend setup, OCR, AI and troubleshooting](server/README.md)
 - [Project map](docs/project-map.md)
-- [Recent Git update summary](docs/git-update-summary.md)
-- [Third-party software declaration](docs/third-party-software-declaration.md)
-- [MariaDB connection notes](PHASE_0_MARIADB_CONNECTION.md)
-- [Earlier reminder and priority changes](PHASE_1_2_CHANGELOG.md)
+- [Replit hosting](docs/replit.md)
+- [Assistant Markdown rendering and attribution](docs/assistant-markdown.md)
+- [Email workflow proposal (not implemented)](docs/email-mvp-plan.md)
 
 ## Prototype limits
 
-Reminder delivery is simulated. email delivery and live payment-provider verification are not implemented. The application is not an integrated card terminal or statutory e-invoice submission service. A receipt image, pending transfer or OCR result does not prove that funds settled.
+Reminder delivery is simulated. Email delivery and live payment-provider verification are not implemented. The application is not an integrated card terminal or statutory e-invoice submission service. A receipt image, pending transfer or OCR result does not prove that funds settled.
 
 Demo roles and the shared access mechanism are not production user authentication. Use synthetic contacts and transactions. Keep `.env`, API keys, database backups, original business documents, local environments and generated build folders out of commits.
 
 ## License and attribution
 
-The repository contains the [Apache License 2.0](LICENSE). Third-party libraries, fonts, runtimes and model weights retain their respective licenses. See the [third-party software declaration](docs/third-party-software-declaration.md) for the main components and attribution sources; preserve applicable upstream license and notice files when distributing them.
+The repository contains the [Apache License 2.0](LICENSE). Third-party libraries, fonts, runtimes and model weights retain their respective licenses. Preserve applicable upstream license and notice files when distributing them. Markdown renderer attribution is recorded in [the rendering guide](docs/assistant-markdown.md).
