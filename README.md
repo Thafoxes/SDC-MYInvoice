@@ -123,6 +123,94 @@ npm run dev
 
 The frontend runs at [localhost:5173](http://localhost:5173); the backend defaults to `127.0.0.1:8787`. Vite proxies `/api` to the backend. The first Docling conversion may download models. Restart the relevant process after changing environment settings.
 
+### Runpod Ollama with Gemma 4 31B
+
+This runs the model on a Runpod GPU while the frontend, Node backend, database and Docling OCR stay on your app computer. No new AI adapter is required: the backend already uses Ollama's `/api/chat` protocol.
+
+#### 1. Configure the Pod
+
+In the Runpod console, deploy a GPU Pod with the `ollama/ollama:latest` image. Select a GPU with enough memory for the model and context window; our RTX PRO 6000 Blackwell Server Edition session ran `gemma4:31b` entirely on GPU. Check the displayed compute and storage prices before deploying.
+
+Configure these Pod settings:
+
+| Setting | Value |
+| --- | --- |
+| HTTP port | `11434` |
+| `OLLAMA_HOST` | `0.0.0.0:11434` |
+| `OLLAMA_MODELS` | `/workspace/models` |
+| `OLLAMA_FLASH_ATTENTION` | `1` |
+
+Mount persistent storage at `/workspace` if you want downloaded models to survive replacement of the container. Merely setting `OLLAMA_MODELS` does not create persistent storage. Verify the actual mount and storage retention rules before stopping or deleting a Pod.
+
+The exposed Ollama API has no built-in authentication. Use synthetic data for initial checks; protect the API with an authenticated gateway or a private SSH tunnel before sending private business documents. A Runpod account API key does not automatically protect this API.
+
+#### 2. Download the model and verify GPU inference
+
+Once the Pod is ready, open its Web Terminal:
+
+```bash
+ollama pull gemma4:31b
+ollama run gemma4:31b
+```
+
+Send a short message. Keep that session open and use a second Pod terminal to check:
+
+```bash
+ollama ps
+nvidia-smi
+```
+
+`ollama ps` should list `gemma4:31b` with `100% GPU`. `nvidia-smi` should show an Ollama inference process with GPU memory allocated. An empty model list means nothing is currently loaded; it does not prove CPU fallback. GPU utilization can fall between requests. Check GPU allocation before changing hardware because CPU saturation alone does not prove CPU offloading.
+
+The first request can take longer to load the model. The backend currently waits for the complete answer (`stream:false`), so it does not display tokens as they are generated.
+
+#### 3. Connect NudgeWise
+
+Edit the project's `.env`, preserving your database, OCR and other credentials:
+
+```dotenv
+VITE_BACKEND_ENABLED=true
+AI_PROVIDER=ollama
+OLLAMA_BASE_URL=https://YOUR_POD_ID-11434.proxy.runpod.net
+OLLAMA_MODEL=gemma4:31b
+AI_TIMEOUT_MS=120000
+```
+
+Replace `YOUR_POD_ID` with the ID shown in Runpod. For example, Pod `6ffjnpu2if3xjx` uses `https://6ffjnpu2if3xjx-11434.proxy.runpod.net`. Use your current Pod ID if it has changed. Do not append `/api/chat` to the base URL; the backend adds it.
+
+`AI_PROVIDER=ollama` uses `OLLAMA_BASE_URL` without an API key, including when that URL points to Runpod. `http://localhost:11434` instead uses the computer running the backend. `AI_PROVIDER=cloud` uses `CLOUD_AI_BASE_URL` and the cloud key; saving a key alone does not select cloud mode.
+
+Restart the backend, and restart Vite if you changed `VITE_BACKEND_ENABLED`:
+
+```powershell
+npm run server
+```
+
+```powershell
+npm run dev
+```
+
+#### 4. Check the connection
+
+From your app computer, replace the placeholder and list installed models:
+
+```powershell
+Invoke-RestMethod "https://YOUR_POD_ID-11434.proxy.runpod.net/api/tags"
+```
+
+Then submit an AI assistant question in NudgeWise using synthetic records. Confirm that the Pod is processing the request rather than relying only on its Running status.
+
+| Symptom | Check or action |
+| --- | --- |
+| `/api/tags` returns 404 rather than JSON | Check the current Pod ID, exposed HTTP port, startup readiness and container logs. |
+| `/api/tags` returns `{"models":[]}` | Download `gemma4:31b` again and verify the persistent storage mount. |
+| `/api/chat` returns 404 but `/api/tags` works | Ensure `OLLAMA_MODEL` exactly matches an installed tag, then restart the backend. |
+| Slow first response | Allow model loading to finish; inspect `ollama ps` while generating. |
+| Model shows CPU or mixed CPU/GPU | Inspect Ollama logs and GPU memory availability; verify allocation before renting a different GPU. |
+| `ECONNREFUSED 127.0.0.1:3306` | Start the configured MySQL/MariaDB service or intentionally select SQLite; this error is independent of Runpod. |
+
+Stop GPU compute when finished and review any continuing storage charges. See the [Runpod Ollama tutorial](https://docs.runpod.io/tutorials/pods/run-ollama) and [Ollama GPU checks](https://docs.ollama.com/faq#how-can-i-tell-if-my-model-was-loaded-onto-the-gpu) for upstream guidance.
+
 ### MariaDB with Laragon or XAMPP
 
 Start your database server and configure a dedicated demo database and account:

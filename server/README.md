@@ -57,6 +57,8 @@ AI_TIMEOUT_MS=120000
 
 Restart the backend with `npm run server` after changing these settings. No Runpod account key is needed for the Pod's native Ollama API; existing cloud credentials are unused in this mode. Frontend, database and local OCR settings stay the same.
 
+If AI requests return HTTP 404, check the Pod's `/api/tags` response. An empty `models` list means the model must be downloaded again (`ollama pull gemma4:31b` in the Pod terminal). A directory named `/workspace/models` is not persistent unless a persistent volume is actually mounted there or at its parent. Verify the storage mount before stopping or replacing the Pod; otherwise downloaded models can be lost. `OLLAMA_MODEL` must exactly match an installed model tag.
+
 This Pod URL currently has no authentication. Before sending private business documents, protect it with an authenticated gateway or use a private SSH tunnel. For an authenticated Ollama gateway, use `AI_PROVIDER=cloud`, its URL in `CLOUD_AI_BASE_URL`, `CLOUD_AI_MODEL=gemma4:31b`, and its dedicated token in `CLOUD_AI_API_KEY` (never a `VITE_*` variable). A replacement Pod needs a new URL.
 
 ## MariaDB / XAMPP
