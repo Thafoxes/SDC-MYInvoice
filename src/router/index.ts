@@ -10,6 +10,7 @@ import SettingsView from '@/views/SettingsView.vue';
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    {path:'/demo-payment',component:()=>import('@/views/DemoPaymentView.vue'),meta:{title:'Demo payment link',subtitle:'Preview only; no real payments are processed.'}},
     { path: '/', redirect: '/dashboard' },
     { path: '/invoices', name: 'invoices', component: InvoicesView, meta: { title: 'Invoices', subtitle: 'Search invoices and review balances, payments and follow-ups.' } },
     { path: '/customers/:id/:mode(view|edit)', name: 'customer-record', component: CustomersView, meta: { title: 'Customer details', subtitle: 'View or edit a customer.' } },

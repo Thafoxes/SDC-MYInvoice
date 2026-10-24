@@ -11,6 +11,7 @@ import { saveQuotation,copyQuotationToOrder,setQuotationDecision,confirmDelivery
  setOrderCase,resolveOrderCase,uploadOrderEvidence,uploadPaymentEvidence,attachOrderEvidence,issueCreditNote,acceptDeliveryShortfall,issueDebitNote } from '@/services/commands';
 import type { OrderEvidence } from '@/lib/orderWorkflow';
 import { Check, AlertTriangle, Minus, FileText } from 'lucide-vue-next';
+import PaymentRequest from '@/components/PaymentRequest.vue';
 import InvoiceDocuments from '@/components/InvoiceDocuments.vue';
 import {invoiceDocument} from '@/lib/invoiceDocuments';
 import {hasCurrentFinalReceipt} from '@/lib/settlement';
@@ -274,6 +275,7 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
   </div>
   <div id="stage-payment" class="scroll-mt-48 lg:scroll-mt-28 rounded-lg border p-4 space-y-3"><h4 class="font-semibold">Payment and receipt</h4>
     <p v-if="invoice" class="text-sm">Outstanding: <strong>{{asMoney(invoiceView?.outstanding_balance)}}</strong> · Evidence alone never verifies a bank transfer.</p><p v-else class="text-sm text-slate-500">Payment tracking starts when the invoice is created.</p>
+    <PaymentRequest v-if="invoice" :invoice-id="invoice.id" />
     <div v-if="invoice && invoiceView && invoiceView.outstanding_balance>0" class="grid sm:grid-cols-3 gap-2"><input v-model.number="claimForm.amount" type="number" min="0.01" step="0.01" class="form-input !mt-0" placeholder="Claimed amount" />
       <input v-model="claimForm.reference" class="form-input !mt-0" placeholder="Payment reference" />
       <select v-model="claimForm.evidence_id" class="form-input !mt-0"><option value="">No screenshot</option><option v-for="e in evidence.filter(x=>x.kind==='payment_proof')" :key="e.id" :value="e.id">{{e.filename}}</option></select>

@@ -248,3 +248,14 @@ Generated invoice PDFs use current recorded balances: invoices fully covered by 
 
 
 Transaction currency follows the agreed quotation into the PO and newly issued invoice. Invoice PDFs, receipts and invoice-detail amounts use that transaction currency, rather than the company default. Existing invoices without a saved currency infer it from the linked quotation or order. Invoice-list outstanding totals are grouped by currency; this is not foreign-exchange conversion.
+
+
+## Draft a payment request by email or WhatsApp
+
+In **Orders > Payment and receipt**, use **Draft payment request · Email / WhatsApp**. The draft uses the invoice reference, current outstanding balance, transaction currency, due date and buyer contacts. Review or edit the recipient, email subject and message before opening your email app or WhatsApp. Missing contacts can be entered in the draft without changing the customer record. Copy is available if no email handler is configured.
+
+**Open email draft** opens the configured mail app; **Open in WhatsApp** opens a prefilled chat. The seller sends the message in that application. NudgeWise has no email delivery provider here and does not record these drafts as sent. Requests are disabled for settled invoices, active disputes and verification holds. If invoice facts change while the draft is open, the draft refreshes and needs review again.
+
+The included **demo payment link** opens a preview with an invoice reference and illustrative amount. It does not collect payment details, process funds or change invoice status. Link values can be edited and are not trusted financial records. Localhost links work only on the hosting computer; sharing an accessible demo requires a deployed URL and any configured demo access. Record payment only after independently checking settled funds.
+
+Payment-request drafts support **EN / BM / 中文**, initially using the buyer’s saved language (English when unspecified). Switching language regenerates the subject and message while preserving recipient details. Both email and WhatsApp use the selected draft text; review any edits again after switching.
