@@ -109,3 +109,12 @@ npm run build
 ```
 
 These regression suites use synthetic fixtures and mocked AI; they do not verify a live Gemma service or real bank settlement. `test:mariadb` checks the adapter seam without requiring a live database; `db:check` checks the configured database connection. The old `test:telegram` and `test:telegram:live` commands have been removed.
+
+
+## Demo scenarios and assistant retrieval
+
+The `manageDemoScenarios` command loads, resets or removes a business-scoped fictional dataset. The store snapshot retains its record manifest and reviewed `knowledgePolicies`; both SQLite and MariaDB persist these through their existing state path. No new database service or embedding API is required. Reset refuses to remove demo data when independent manual sales records depend on it.
+
+`/api/policy-document` retains the uploaded original and uses local Docling to propose text, without invoking cloud AI during import. The seller must review and publish that text using `saveKnowledgePolicy`. Assistant questions retrieve active, effective policy passages and workflow guide excerpts plus current invoice/order facts. Selected evidence is sent to the configured Ollama model; responses include source metadata. Policies are guidance, not executable approval rules.
+
+See the workflow manual for limits and privacy behavior. Run `npm run test:demo-rag` for mocked scenario/RAG checks.

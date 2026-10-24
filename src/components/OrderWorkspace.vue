@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {quotationDefaults} from '@/lib/businessSettings';
 import { computed, reactive, ref, watch } from 'vue';
 import type { PurchaseOrder, PurchaseOrderItem } from '@/types';
 import { useDemoStore } from '@/composables/useDemoStore';
@@ -67,15 +68,15 @@ function goTo(key:StageKey){
 watch(()=>props.order.id,()=>{
  const q=quote.value;qform.reference=q?.reference||`QT-${props.order.reference}`;
  qform.currency=q?.currency||props.order.details?.currency||'MYR';
- qform.payment_terms=q?.payment_terms||props.order.details?.payment_terms||'';
- qform.delivery_terms=q?.delivery_terms||'';qform.valid_until=q?.valid_until||'';
+ qform.payment_terms=q?q.payment_terms:quotationDefaults(DEMO_BUSINESS_ID).payment_terms;
+ qform.delivery_terms=q?.delivery_terms||'';qform.valid_until=q?q.valid_until:quotationDefaults(DEMO_BUSINESS_ID).valid_until;
  qform.items=structuredClone(q?.items||props.order.details?.items||[]).map(line=>({...line,unit_price:line.unit_price??null,discount:line.discount??0}));
  invForm.reference=`INV-${props.order.reference}`;invForm.issue_date=data.value.demoState.simulated_date;
  invForm.due_date='';claimForm.amount=null;claimForm.reference='';claimForm.evidence_id='';
  deliveryForm.name=props.order.details?.items[0]?.name||'';deliveryForm.accepted=null;deliveryForm.note='';buyerNote.value='';buyerEvidence.value='';
 }, {immediate:true});
 watch(()=>quote.value?.updated_at,()=>{const q=quote.value;if(q)Object.assign(qform,{reference:q.reference,items:structuredClone(q.items),currency:q.currency,payment_terms:q.payment_terms,delivery_terms:q.delivery_terms,valid_until:q.valid_until});});
-function copyOrderItems(){qform.items=structuredClone(props.order.details?.items||[]);qform.currency=props.order.details?.currency||'MYR';qform.payment_terms=props.order.details?.payment_terms||'';}
+function copyOrderItems(){qform.items=structuredClone(props.order.details?.items||[]);qform.currency=props.order.details?.currency||'MYR';qform.payment_terms=quotationDefaults(DEMO_BUSINESS_ID).payment_terms;}
 async function run(callback:()=>Promise<unknown>){busy.value=true;error.value='';notice.value='';
  try { const result=await callback() as {success?:boolean;error?:string}|undefined;
   if(result?.success===false)throw Error(result.error||'Action failed');
@@ -130,7 +131,7 @@ const invoiceGate=computed(()=>{
  if(quote.value?.status!=='accepted')return "Record the buyer's acceptance of the quotation first.";
  const critical=blockers.value.find(b=>b.critical);return critical?`Resolve first: ${critical.reason}.`:'';});
 const pendingCredit=computed(()=>creditNotes.value.filter(n=>!n.invoice_id).reduce((s,n)=>s+n.amount,0));
-function asMoney(n:number|null|undefined){return `${quote.value?.currency||props.order.details?.currency||'MYR'} ${(n||0).toFixed(2)}`;}
+function asMoney(n:number|null|undefined){return `${invoiceView.value?.currency||quote.value?.currency||props.order.details?.currency||'MYR'} ${(n||0).toFixed(2)}`;}
 function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
  if(kind==='invoice'&&invoice.value){const doc=invoiceDocument(data.value,invoice.value.id,'invoice');downloadDocumentPdf(doc.filename,doc.title,doc.sections);return;}
  const po=props.order;const lines=((kind==='quote'||kind==='invoice')?quote.value?.items||po.details?.items:po.details?.items)||[];
@@ -142,10 +143,11 @@ function download(kind:'po'|'quote'|'invoice'|'receipt', receiptId?:string){
   const rec=receipts.value.find(r=>r.id===receiptId);sections.push({heading:'Seller-verified settlement',lines:[
    `Invoice: ${invoice.value?.invoice_number||'N/A'}`,`Payment received: ${asMoney(rec?.amount)}`,`Verified / recorded: ${rec?.issued_at||''}`]});
  }else{
-  sections.push({heading:`Items (${quote.value?.currency||po.details?.currency||'MYR'})`,lines:[],items:lines});
-  sections.push({heading:'Commercial terms',lines:[`Total: ${(kind==='po' && purchaseOrderTotal(lines)===null)?'-':asMoney(kind==='quote'?quote.value?.amount:kind==='invoice'?invoice.value?.invoice_amount:purchaseOrderTotal(lines))}`,
+  sections.push({heading:`Items (${(kind==='po'?po.details?.currency:quote.value?.currency)||'MYR'})`,lines:[],items:lines});
+  sections.push({heading:'Commercial terms',lines:[`Total: ${(kind==='po' && purchaseOrderTotal(lines)===null)?'-':`${kind==='po'?po.details?.currency:quote.value?.currency||po.details?.currency} ${(kind==='quote'?quote.value?.amount:kind==='invoice'?invoice.value?.invoice_amount:purchaseOrderTotal(lines))?.toFixed(2)}`}`,
    `Payment terms: ${quote.value?.payment_terms||po.details?.payment_terms||'To be confirmed'}`,
-   `Delivery terms: ${quote.value?.delivery_terms||'To be confirmed'}`]});
+   `Delivery terms: ${quote.value?.delivery_terms||'To be confirmed'}`,
+   ...(kind==='quote'?[`Prices valid until: ${quote.value?.valid_until||'To be confirmed'}`]:[])]});
  }
  downloadDocumentPdf(`${kind}-${reference||po.reference}.pdf`,title,sections);
 }

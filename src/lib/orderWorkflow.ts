@@ -1,3 +1,4 @@
+import {quotationDefaults} from './businessSettings';
 /** Seller-controlled PO -> quotation -> invoice -> settlement demo workflow.
  * Commands validate against server-loaded state. Uploaded evidence is NOT approval. */
 import { getStore, update, computeInvoiceWithCustomer, DEMO_BUSINESS_ID } from './store';
@@ -76,6 +77,7 @@ export function saveQuotation(poId: string, input: Pick<Quotation,'reference'|'i
  if (!input || !validText(input.reference,80) || !input.reference.trim() || !/^[A-Z]{3}$/.test(input.currency)
    || !validText(input.payment_terms,500) || !validText(input.delivery_terms,500) || !validText(input.valid_until,10)
    || (input.valid_until && !/^\d{4}-\d{2}-\d{2}$/.test(input.valid_until))) throw Error('Check quotation details');
+ input={...input,payment_terms:input.payment_terms.trim()||quotationDefaults(businessId).payment_terms,valid_until:input.valid_until||quotationDefaults(businessId).valid_until};
  const lines = validatePurchaseOrderDetails({...po.details, currency:input.currency, items:input.items, document_total:null}).items;
  if (getStore().invoices.some(i=>i.purchase_order_id===poId) || getStore().deliveryConfirmations.some(d=>d.purchase_order_id===poId))
    throw Error('Delivery or invoicing has started; preserve the agreed quotation');
@@ -153,6 +155,7 @@ export function issueOrderInvoice(poId: string, reference: string, issueDate: st
  if(po.status!=='approved')throw Error('Seller must approve PO processing before creating an invoice');
  const q=getStore().quotations.find(x=>x.purchase_order_id===poId&&x.status==='accepted'&&x.business_id===businessId);
  if(!q)throw Error('Record buyer acceptance of the quotation first');
+ if(po.details?.currency!==q.currency)throw Error('Order and agreed quotation currencies differ. Review and copy the agreed quotation before invoicing.');
  if(!validText(reference,80)||!reference.trim()||!/^\d{4}-\d{2}-\d{2}$/.test(issueDate)||!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)||dueDate<issueDate)throw Error('Check invoice reference and dates');
  if(getStore().invoices.some(x=>x.business_id===businessId&&x.invoice_number.toLowerCase()===reference.toLowerCase()))throw Error('Invoice number already exists');
  if(getStore().invoices.some(x=>x.purchase_order_id===poId))throw Error('This order already has an invoice; open it instead');
@@ -160,7 +163,7 @@ export function issueOrderInvoice(poId: string, reference: string, issueDate: st
  if(blockers.some(x=>x.critical))throw Error(`Resolve blocker before invoicing: ${blockers.find(x=>x.critical)!.reason}`);
  const invoiceId=id();
  update(d=>{d.invoices.unshift({id:invoiceId,business_id:businessId,customer_id:po.customer_id,purchase_order_id:poId,quotation_id:q.id,prepared_by:getStore().businesses.find(b=>b.id===businessId)?.salesperson_name||actor,
-   invoice_number:reference.trim(),invoice_amount:q.amount,issue_date:issueDate,due_date:dueDate,status:'pending',labels:[],
+   currency:q.currency,invoice_number:reference.trim(),invoice_amount:q.amount,issue_date:issueDate,due_date:dueDate,status:'pending',labels:[],
    dispute_active:false,verification_hold:false,promise_to_pay_date:null,promise_confirmed:false,created_at:now()});
    event(d,'invoice_issued',poId,actor,`Invoice ${reference} created from accepted quotation; seller must verify legal document requirements`);
    for(const note of d.creditNotes.filter(n=>n.purchase_order_id===poId&&!n.invoice_id)){const creditId=id();

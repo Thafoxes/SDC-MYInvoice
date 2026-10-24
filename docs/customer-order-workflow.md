@@ -196,3 +196,55 @@ Fresh workspaces start with the editable demo profile **Kedai Maju Jaya Sdn Bhd*
 ## Extract requested items from chat screenshots or PDFs
 
 Under **Create order → Order details**, use **Extract requested items from buyer chat screenshot or PDF**. PNG, JPG and PDF are accepted, up to 10 MB and five pages. You can upload a PDF export or a PDF containing chat screenshots. The same local Docling OCR and configured AI provider propose requested items and quantities; review them before saving. Original evidence is retained. Extraction does not confirm buyer agreement, prices or payment. For a formal buyer PO, use **Start from buyer’s PO** instead so its document fields can be extracted.
+
+
+## Repeatable demo scenarios
+
+Open **Demo Controls > Load demo scenarios** to add 8 fictional customers, 10 invoices, 14 orders and 2 quotations. Startup remains empty. Loading twice does not duplicate records. Company settings and existing manual records are preserved. Scenario dates are relative to the current business/demo date at load time; backend mode still uses the actual business date.
+
+- **DEMO-INV-1/2:** normal credit and partial payment.
+- **DEMO-INV-3:** 90 days overdue with a missed payment promise.
+- **DEMO-INV-4** and **DEMO-INV-MULTI-1/2:** several unpaid invoices for one customer.
+- **DEMO-INV-5/6:** active dispute and resolved dispute requiring settlement.
+- **DEMO-INV-7:** payment claim awaiting verification.
+- **DEMO-INV-8:** paid sale with accepted delivery and a final receipt.
+- **DEMO-REVIEW-1/2:** draft and accepted quotations.
+- **DEMO-REVIEW-3/4:** PO review and a deliberately mismatched printed total.
+- **DEMO-REVIEW-5/6:** draft orders blocked by dispute/settlement obligations.
+
+Use **Run Invoice Check** to populate reminder reviews under the existing rules. Ordinary overdue invoices require attention but do not automatically block new orders. Dispute and settlement rules still govern order approval.
+
+**Reset demo scenarios** removes the previous scenarios and their linked payments, claims, follow-ups and activity, then creates the starting set again. **Remove demo scenarios** removes that set without recreating it. Both preserve manual records, company settings and seller-uploaded policies. If a new manual sales record depends on a demo customer/order, removal is refused rather than deleting that manual record. Resolve that link or keep the scenarios. Files already uploaded to evidence storage are not erased by scenario removal.
+
+**Clear Entire Workspace** is the separate destructive reset: it removes all workspace records and restores the empty starting configuration. It is not the same as resetting only the demo scenarios.
+
+## AI Assistant: policies, current records and workflow guidance
+
+The backend assistant uses retrieval-augmented generation (RAG): lexical search retrieves relevant passages from reviewed company policies and this manual, while current invoice balances, payments and customer order blockers are read directly from the store. It then passes that evidence to the configured Ollama model. No vector database or embedding API is required.
+
+1. Open **AI Assistant > Company policies and assistant sources > Add policy**.
+2. Enter a title, version and effective date. Paste text, import a `.txt`/`.md` file (up to 40 KB), or upload a PDF using local Docling (10 MiB, up to five pages). Policy text is limited to 40,000 characters. Review for missing or truncated content.
+3. Review the extracted text against **View original policy PDF**. If OCR fails, the original is retained and text can be entered manually. Plain-text imports retain the reviewed text, rather than a separate original file.
+4. Confirm review and save. Only the seller can save policies. Saving an active version deactivates other versions with the same title. Inactive policies and policies effective after the business date are excluded from retrieval. Open a saved policy to edit or deactivate it; review must be confirmed again.
+5. Optionally select an invoice and ask, for example: “Which invoices need attention and what policy applies?”, “Why is this customer's order blocked?”, or “How do I open a PO and issue an invoice?”
+6. Expand **Retrieved sources** below a reply to open the invoice, order, policy text or workflow manual. Links identify the evidence supplied to the model; review the model's inline source citations when assessing its claims.
+
+The loaded demo scenarios include a clearly fictional credit/dispute policy. Scenario reset replaces that policy along with the sample records; personal company policies remain.
+
+Retrieval is limited to 20 detailed invoices, 10 orders, 40 attention findings and six document passages per question; the model receives counts and an explicit limitation. Select a specific invoice for focused questions. No relevant policy means the assistant should report missing evidence instead of inventing terms. Policies supply guidance and do not change executable approval rules, balances, fees or permissions. AI suggestions never independently approve an order, verify payment, resolve a dispute or send a customer message.
+
+Cloud mode sends retrieved policy excerpts and selected business facts to Ollama. PDF extraction itself runs locally. Browser-only mode retains policy entry and demo controls, but assistant answers remain the existing predefined rules rather than model-generated RAG answers. A configured model is not proof that the API is connected; failed calls display an error.
+
+Run `npm run test:demo-rag` for scenario, retrieval, policy-review, scope and persistence checks. These tests mock model responses and do not prove live model answer quality.
+
+
+## Order links and printed commercial terms
+
+The Invoices list and Invoice Details provide **View order** for invoices linked to an order. Open it to review the requested items, quotation and delivery history. Legacy invoices without a linked order show that no order is available.
+
+Under **Settings > Quotation defaults**, set your company's payment terms and price-validity period (initially seven days). New quotation drafts use those defaults; review or override them before saving. Quotation PDFs print the saved payment terms and **Prices valid until** date. Changing Settings does not rewrite existing quotations or buyer agreements.
+
+Generated invoice PDFs use current recorded balances: invoices fully covered by recorded payments show **FULLY PAID**. Those settled with credit adjustments show **FULLY SETTLED** instead of claiming cash was received. Invoice and final-receipt PDFs include: “This is a computer-generated digital copy. No signature is required.” This wording does not replace payment verification or resolve disputes.
+
+
+Transaction currency follows the agreed quotation into the PO and newly issued invoice. Invoice PDFs, receipts and invoice-detail amounts use that transaction currency, rather than the company default. Existing invoices without a saved currency infer it from the linked quotation or order. Invoice-list outstanding totals are grouped by currency; this is not foreign-exchange conversion.

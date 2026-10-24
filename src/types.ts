@@ -14,6 +14,8 @@ export interface Business {
   email?: string;
   salesperson_name?: string;
   settings_initialized?: boolean;
+  payment_terms?: string;
+  quotation_validity_days?: number;
   currency: string;
   timezone: string;
 }
@@ -45,6 +47,7 @@ export interface FinalReceipt {
   payments:Pick<Payment,'id'|'amount'|'payment_date'|'method'|'reference'|'evidence_id'>[];
 }
 export interface Invoice {
+  currency?: string;
   id: string;
   business_id: string;
   customer_id: string;
@@ -223,6 +226,7 @@ export interface Notification {
 }
 
 export interface AiConversation {
+  sources?: {id:string;title:string;url:string}[];
   id: string;
   business_id: string;
   user_id: string | null;

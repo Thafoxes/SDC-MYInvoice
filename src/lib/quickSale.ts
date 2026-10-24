@@ -51,7 +51,7 @@ export function createQuickSale(input:QuickSaleInput,actor:string,role:string,bu
   for(const [evidence,kind] of [[input.order_evidence,'chat_screenshot'],[input.payment_evidence,'payment_proof']] as const)if(evidence)
    d.orderEvidence.push({...evidence,kind,business_id:businessId,purchase_order_id:orderId,saved_at:issuedAt});
   const invoice:Invoice={id:invoiceId,business_id:businessId,customer_id:customer.id,purchase_order_id:orderId,prepared_by:business.salesperson_name||actor,
-   invoice_number:input.reference.trim(),invoice_amount:total,issue_date:input.issue_date,due_date:input.payment_mode==='paid_now'?input.issue_date:input.due_date,
+   currency:details.currency,invoice_number:input.reference.trim(),invoice_amount:total,issue_date:input.issue_date,due_date:input.payment_mode==='paid_now'?input.issue_date:input.due_date,
    status:'pending',labels:[],dispute_active:false,verification_hold:false,promise_to_pay_date:null,promise_confirmed:false,created_at:issuedAt};
   d.invoices.unshift(invoice);
   if(input.handed_over)for(const item of details.items)d.deliveryConfirmations.push({id:crypto.randomUUID(),business_id:businessId,purchase_order_id:orderId,

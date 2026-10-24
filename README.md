@@ -30,7 +30,8 @@ NudgeWise helps Malaysian micro and small businesses manage customer orders, quo
 - **Dashboard and Action Center:** Review balances, overdue invoices, reminder approvals, customer replies, payment claims and activity history.
 - **Reminder safeguards:** Recheck invoice eligibility before recording a simulated follow-up; respect dispute and payment-verification holds and duplicate-checkpoint rules.
 - **Customer priorities:** Explainable Red / Yellow / Green / Grey follow-up classifications, separate from operational review urgency.
-- **AI assistant:** Configurable local/cloud Ollama assistance and reminder rewriting, with local rules where applicable.
+- **AI assistant with RAG:** Retrieves current invoice facts, reviewed company policies and workflow guidance for source-linked suggestions through Ollama. Includes optional invoice context and PDF/text policy import.
+- **Repeatable demo scenarios:** Load, reset or remove a fictional set of quotations, POs and invoices, including overdue, disputed, blocked and completed cases, while preserving independent manual records and company settings.
 
 The workspace starts without sample transactions. Demo controls provide a simulated business date and reset. The [sample buyer PO](output/pdf/demo-buyer-purchase-order.pdf) contains fictional contacts and three items totaling **MYR 1,520.00**.
 
@@ -159,6 +160,7 @@ npm run test:pdf
 npm run test:settings
 npm run test:mariadb
 npm run test:ui
+npm run test:demo-rag
 ```
 
 Additional customer, PO, backend and AI suites are listed in `package.json` and the backend guide. Synthetic/mock integration tests do not independently prove that live OCR, cloud inference or a real database installation is working.

@@ -23,6 +23,7 @@
     "test:pdf": "tsc -p tsconfig.logic-tests.json && node tests/setup-test-build.cjs && node --test tests/document-pdf.test.cjs",
     "test:settings": "npm run server:build && node --test tests/business-settings.test.cjs",
     "test:settlement": "npm run server:build && node --test tests/settlement.test.cjs",
+    "test:demo-rag": "npm run server:build && node --test tests/demo-rag.test.cjs",
     "test:quick-sale": "npm run server:build && node --test tests/quick-sale.test.cjs"
   },
   "dependencies": {

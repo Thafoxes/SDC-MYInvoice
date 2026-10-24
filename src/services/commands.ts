@@ -1,3 +1,5 @@
+import * as scenarios from '@/lib/demoScenarios';
+import * as knowledge from '@/lib/knowledge';
 import { ref } from 'vue';
 import * as actions from '@/lib/actions';
 import * as store from '@/lib/store';
@@ -134,3 +136,7 @@ export const addActivity = command('addActivity', store.addActivity);
 export const addAiMessage = command('addAiMessage', store.addAiMessage);
 export const clearAiConversation = command('clearAiConversation', store.clearAiConversation);
 export const askAiAssistant = command('askAiAssistant', localAssistant);
+
+export const manageDemoScenarios = command('manageDemoScenarios', scenarios.manageDemoScenarios);
+export const saveKnowledgePolicy = command('saveKnowledgePolicy', knowledge.saveKnowledgePolicy);
+export function extractPolicyDocument(file:File,role='seller'):Promise<EvidenceUpload>{return uploadDocument(file,role,'/api/policy-document');}
