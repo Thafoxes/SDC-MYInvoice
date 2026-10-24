@@ -99,12 +99,12 @@ def main():
              'CustomersView': 'Customer history', 'aiService': 'Invoice assistant rules',
              'integrations': 'OCR and AI integrations', 'tsconfig': 'Frontend compiler settings',
              'AiAssistantView': 'Assistant conversation', 'AppHeader': 'Navigation and notifications',
-             'PaymentCelebration': 'Payment feedback', 'TelegramReceipts': 'Legacy Telegram receipts',
+             'PaymentCelebration': 'Payment feedback',
              'replit': 'Replit deployment notes', 'AttentionQueue': 'Shared attention queue',
              'DemoAccess': 'Demo passcode screen', 'commands': 'Browser backend commands',
              'tsconfig.logic-tests': 'Test compiler settings', 'app': 'HTTP and SQLite backend',
              'display': 'Shared display labels', 'logic.test': 'Business rule regression tests',
-             'PHASE_1_2_CHANGELOG': 'Reminder safeguard history', 'access': 'Demo access guard',
+             'access': 'Demo access guard',
              'tsconfig.server': 'Server compiler settings', 'priorityEngine': 'Customer payment priorities',
              'pyproject': 'Python environment', 'postcss.config': 'CSS build settings',
              'requirements': 'OCR Python dependencies'}
@@ -115,7 +115,7 @@ def main():
         stem = Path(dominant).stem
         labels[cid] = names.get(stem, 'Build and runtime dependencies')
         if stem == 'README':
-            labels[cid] = 'Legacy integration setup' if dominant.startswith('server/') else 'Project setup and scope'
+            labels[cid] = 'Backend setup and integrations' if dominant.startswith('server/') else 'Project setup and scope'
         if stem == 'package':
             symbols = {graph.nodes[n].get('label') for n in members}
             labels[cid] = ('Development commands' if 'scripts' in symbols else
@@ -135,10 +135,11 @@ def main():
 ## Scope and interpretation
 
 - Code relationships come from Graphify's deterministic AST extraction. Document nodes represent headings and literal source-path references; they are a navigation index, not a claim of complete semantic understanding.
-- `docs/email-mvp-plan.md` describes proposed work. A document referencing a source file does not mean that proposal is implemented. Existing Telegram integration remains separately visible.
+- `docs/email-mvp-plan.md` describes proposed work. A document referencing a source file does not mean that proposal is implemented. Telegram integration has been removed; legacy record fields may remain in source.
 - Secrets, environment files, runtime customer databases, dependencies, builds, datasets, RunPod assets, submission material and binary fixtures/PDFs are excluded. Source CSS, lockfiles and other unsupported formats may not have nodes.
+- SQL relationships require the optional `tree_sitter_sql` parser.
 - Vue template interactions, dynamic dispatch and runtime effects may be absent or approximate. Verify critical behavior in source and tests.
-- Host review used inline document inspection because agent slots were occupied. No external LLM extraction was used; extraction token counters are zero, and host-session token usage is unavailable rather than measured as zero.
+- No external LLM extraction was used; extraction token counters are zero, and host-session token usage is unavailable rather than measured as zero.
 - `graphify-out/` was written into the working tree. Commit only the outputs the team wants to share; generated caches and machine-specific interpreter paths need not be committed.
 '''
     (OUT / 'GRAPH_REPORT.md').write_text(report + notes + '\n## Extraction health\n\n```text\n' + audit + '\n```\n', encoding='utf-8')

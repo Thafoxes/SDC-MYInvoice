@@ -4,6 +4,8 @@ NudgeWise helps Malaysian micro and small businesses manage customer orders, quo
 
 **Version:** 1.1.0 · **Status:** Working prototype with optional backend persistence, local OCR and configurable Ollama AI. Use synthetic records for demos. Bank verification, production user authentication and statutory e-invoice submission are not implemented.
 
+Start with [local setup](#local-setup) to run the app, the [workflow manual](docs/customer-order-workflow.md) to use it, or the [project map](docs/project-map.md) to find the code you need.
+
 ## Team
 
 | Field | Details |
@@ -14,8 +16,8 @@ NudgeWise helps Malaysian micro and small businesses manage customer orders, quo
 | Team leader | WONG JIA SOON |
 | University | UNIVERSITI TEKNOLOGI MALAYSIA |
 | Members | 4 |
-
-[Source repository](https://github.com/Thafoxes/SDC-MYInvoice) · [Slides and demo video](https://canva.link/jg055mv4dvbzpgc)
+| Source repository | [SDC-MYInvoice](https://github.com/Thafoxes/SDC-MYInvoice) |
+| Slides and demo video | [Presentation and demo](https://canva.link/jg055mv4dvbzpgc) |
 
 ## Features
 
@@ -65,7 +67,7 @@ The frontend calls the project's own `/api` backend. Docling runs as a local Pyt
 
 ## Local setup
 
-Run commands from the repository root with Node.js 24+ installed:
+Run commands from the repository root with Node.js 24+ installed. Python 3.12 is only needed for backend document extraction:
 
 ```powershell
 npm install
@@ -143,7 +145,7 @@ npm run server
 
 The credentials must match an actual database account; a blank password only works if that account permits it. Node connects directly to the database, independently of Laragon/phpMyAdmin. The adapter stores authoritative state and original evidence and updates relational projection tables.
 
-`database/BACKUP_V1.sql` is an exported database, not an incremental migration. It contains database/table drop statements; importing it can replace existing data.
+The `database/BACKUP_V*.sql` files are database exports, not incremental migrations. They contain database/table drop statements; importing them can replace existing data.
 
 See the [backend setup and troubleshooting guide](server/README.md) for database permissions, AI modes, platform-specific Python paths and deployment settings. `npm start` builds and serves the frontend through the backend. Hosted/shared access requires the demo access settings described there.
 
@@ -174,6 +176,8 @@ src/
   lib/               Sales, settlement, reminder, customer and persistence rules
   services/          Frontend-to-backend commands and AI requests
   presentation/      Order stages, labels and review messages
+  composables/       Shared reactive store access
+  router/            Routes and page navigation
 server/              HTTP API, database adapters, OCR worker and AI integration
 tests/               Regression suites and synthetic fixtures
 docs/                Workflow manual, project map and technical guides
@@ -185,12 +189,25 @@ graphify-out/        Generated code map (snapshot; confirm against source)
 
 ## Documentation
 
-- [Customer and order workflow](docs/customer-order-workflow.md)
-- [Backend setup, OCR, AI and troubleshooting](server/README.md)
-- [Project map](docs/project-map.md)
-- [Replit hosting](docs/replit.md)
-- [Assistant Markdown rendering and attribution](docs/assistant-markdown.md)
-- [Email workflow proposal (not implemented)](docs/email-mvp-plan.md)
+| Need | Guide |
+| --- | --- |
+| Use the application | [Customer and order workflow](docs/customer-order-workflow.md) |
+| Configure the API, database, OCR or AI | [Backend setup and troubleshooting](server/README.md) |
+| Find code and related tests | [Project map](docs/project-map.md) |
+| Explore code relationships | [Interactive Graphify map](graphify-out/graph.html) (download and open locally); [map report](graphify-out/GRAPH_REPORT.md) |
+| Run on Replit | [Replit hosting](docs/replit.md) |
+| Understand assistant rendering | [Markdown rendering and attribution](docs/assistant-markdown.md) |
+| Review proposed email work | [Email workflow proposal (not implemented)](docs/email-mvp-plan.md) |
+
+### Refresh the code map
+
+With `graphifyy` installed in your Python environment, run from the repository root:
+
+```powershell
+python graphify-out/rebuild.py
+```
+
+This refreshes `graph.html`, `graph.json`, `GRAPH_REPORT.md` and `coverage.json` in `graphify-out/`. The map indexes code relationships and documentation headings; verify runtime behavior in the source and tests. Secrets, runtime data, dependencies, builds and binary fixtures are excluded. See the [project map](docs/project-map.md#map-boundaries) for coverage limits.
 
 ## Prototype limits
 

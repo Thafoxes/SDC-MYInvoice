@@ -1,12 +1,12 @@
 {
   "document_lines": {
-    "PHASE_1_2_CHANGELOG.md": 28,
-    "README.md": 292,
-    "docs/customer-order-workflow.md": 84,
+    "README.md": 220,
+    "docs/assistant-markdown.md": 14,
+    "docs/customer-order-workflow.md": 272,
     "docs/email-mvp-plan.md": 267,
+    "docs/replit.md": 22,
     "index.html": 13,
-    "replit.md": 82,
-    "server/README.md": 87,
+    "server/README.md": 120,
     "server/requirements.txt": 2
   },
   "scope": [
@@ -31,5 +31,5 @@
   ],
   "extraction": "AST plus document headings and literal code-path references",
   "host_session_tokens": null,
-  "generated_at": "2026-10-22T17:33:22.021759+00:00"
+  "generated_at": "2026-10-24T05:54:19.536160+00:00"
 }
